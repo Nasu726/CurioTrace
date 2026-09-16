@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CurioTrace</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="brand-row">
+        <div>
+          <div class="brand">CurioTrace</div>
+          <div class="subtitle">Explicit-session browsing trace</div>
+        </div>
+        <span id="status-dot" class="status-dot" aria-hidden="true"></span>
+      </header>
+
+      <section id="session-panel" aria-live="polite">
+        <h1 id="state-heading">Checking…</h1>
+        <p id="state-detail" class="detail">Reading helper state.</p>
+        <p id="error-message" class="error" hidden></p>
+
+        <div id="session-actions" class="actions" hidden>
+          <button id="start-button" class="primary" type="button" hidden>Start</button>
+          <button id="pause-button" type="button" hidden>Pause</button>
+          <button id="resume-button" class="primary" type="button" hidden>Resume</button>
+          <button id="stop-button" class="danger" type="button" hidden>Stop</button>
+          <button id="retry-button" type="button" hidden>Check again</button>
+        </div>
+      </section>
+
+      <section id="permission-panel" class="permission-panel" hidden aria-live="polite">
+        <h1 id="permission-title"></h1>
+        <p id="permission-body" class="detail"></p>
+        <p class="scope-note"><strong>Requested access:</strong> normal HTTP and HTTPS websites.</p>
+        <div class="actions vertical">
+          <button id="continue-button" class="primary" type="button"></button>
+          <button id="cancel-button" type="button"></button>
+        </div>
+      </section>
+
+      <footer>
+        <span id="reason-code" class="reason-code"></span>
+      </footer>
+    </main>
+
+    <script type="module" src="dist/popup.js"></script>
+  </body>
+</html>
