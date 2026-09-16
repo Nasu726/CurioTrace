@@ -19,7 +19,22 @@
         "required": ["action"],
         "properties": {
           "action": {
-            "enum": ["start", "navigate", "scroll_to", "wait", "select", "copy", "switch_tab", "pause", "resume", "stop"]
+            "enum": [
+              "start",
+              "grant_permission",
+              "deny_permission",
+              "navigate",
+              "scroll_to",
+              "wait",
+              "select",
+              "copy",
+              "switch_tab",
+              "pause",
+              "resume",
+              "stop",
+              "disconnect_helper",
+              "restart_helper"
+            ]
           },
           "target": { "type": "string" },
           "seconds": { "type": "number", "minimum": 0 },
@@ -47,6 +62,29 @@
               "source_id": { "type": "string" },
               "url_suffix": { "type": "string" },
               "title": { "type": "string" }
+            }
+          }
+        },
+        "expected_final_state": {
+          "enum": ["IDLE", "RECORDING", "PAUSED", "FINISHED", "INTERRUPTED"]
+        },
+        "recording_must_not_start": { "type": "boolean" },
+        "expected_capture_modes": {
+          "type": "array",
+          "items": {
+            "enum": ["dom", "redacted_visual", "fingerprint_only", "metadata_only", "blocked", "failed"]
+          },
+          "uniqueItems": true
+        },
+        "expected_rejections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reason"],
+            "properties": {
+              "reason": { "type": "string", "minLength": 1 },
+              "minimum_count": { "type": "integer", "minimum": 1 }
             }
           }
         },
