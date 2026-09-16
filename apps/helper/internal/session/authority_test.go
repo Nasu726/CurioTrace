@@ -50,7 +50,10 @@ func TestInterruptFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	interrupted := a.Interrupt()
+	interrupted, err := a.Interrupt()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if interrupted.State != Interrupted {
 		t.Fatalf("expected interrupted, got %+v", interrupted)
 	}

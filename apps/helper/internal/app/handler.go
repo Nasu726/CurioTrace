@@ -28,6 +28,13 @@ func NewHandlerWithStore(durableStore store.Store) *Handler {
 	return &Handler{authority: session.NewAuthority(), store: durableStore}
 }
 
+func NewHandlerWithAuthorityAndStore(authority *session.Authority, durableStore store.Store) *Handler {
+	if authority == nil {
+		authority = session.NewAuthority()
+	}
+	return &Handler{authority: authority, store: durableStore}
+}
+
 func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 	if major(message.ProtocolVersion) != major(protocol.Version) {
 		return ack(message, false, "INCOMPATIBLE_PROTOCOL", nil)
@@ -40,14 +47,10 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 			"helper_version":        helperVersion,
 			"compatible":            true,
 			"required_capabilities": []string{},
-			"helper_capabilities": []string{
-				"observation_schema_v1",
-				"recording_epoch_v1",
-				"fail_closed_disconnect_v1",
-			},
-			"session_state":   snapshot.State,
-			"session_id":      nullableString(snapshot.SessionID),
-			"recording_epoch": snapshot.RecordingEpoch,
+			"helper_capabilities":   helperCapabilities(h.authority),
+			"session_state":         snapshot.State,
+			"session_id":            nullableString(snapshot.SessionID),
+			"recording_epoch":       snapshot.RecordingEpoch,
 		})
 
 	case "session.start":
@@ -56,7 +59,7 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 		}
 		snapshot, err := h.authority.Start()
 		if err != nil {
-			return ack(message, false, "INVALID_TRANSITION", nil)
+			return h.transitionError(message, snapshot, err, "INVALID_TRANSITION")
 		}
 		return ack(message, true, "OK", statePayload(snapshot))
 
@@ -76,6 +79,18 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 	default:
 		return ack(message, false, "UNKNOWN_MESSAGE_KIND", nil)
 	}
+}
+
+func helperCapabilities(authority *session.Authority) []string {
+	capabilities := []string{
+		"observation_schema_v1",
+		"recording_epoch_v1",
+		"fail_closed_disconnect_v1",
+	}
+	if authority != nil && authority.IsDurable() {
+		capabilities = append(capabilities, "durable_session_authority_v1")
+	}
+	return capabilities
 }
 
 func (h *Handler) storeUnavailableReason() string {
@@ -125,7 +140,7 @@ func (h *Handler) handleObservation(message protocol.Envelope) protocol.Envelope
 		return ack(message, false, "STORE_NOT_CONFIGURED", nil)
 	}
 	if err := h.store.Append(context.Background(), validated); err != nil {
-		interrupted := h.authority.Interrupt()
+		interrupted, _ := h.authority.Interrupt()
 		return ack(message, false, "STORE_ERROR", statePayload(interrupted))
 	}
 	return ack(message, true, "OK", nil)
@@ -136,9 +151,17 @@ type transitionFunc func(string, uint64) (session.Snapshot, error)
 func (h *Handler) transition(message protocol.Envelope, transition transitionFunc) protocol.Envelope {
 	snapshot, err := transition(message.SessionID, message.RecordingEpoch)
 	if err != nil {
-		return ack(message, false, "STALE_EPOCH_OR_INVALID_TRANSITION", nil)
+		return h.transitionError(message, snapshot, err, "STALE_EPOCH_OR_INVALID_TRANSITION")
 	}
 	return ack(message, true, "OK", statePayload(snapshot))
+}
+
+func (h *Handler) transitionError(message protocol.Envelope, snapshot session.Snapshot, err error, fallbackReason string) protocol.Envelope {
+	reason := fallbackReason
+	if errors.Is(err, session.ErrStatePersistence) {
+		reason = "STATE_PERSISTENCE_ERROR"
+	}
+	return ack(message, false, reason, statePayload(snapshot))
 }
 
 func statePayload(snapshot session.Snapshot) map[string]any {

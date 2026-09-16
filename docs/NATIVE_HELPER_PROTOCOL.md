@@ -1,6 +1,6 @@
 # CurioTrace Native Helper Protocol
 
-Status: product-level protocol contract for #23. Concrete production language/runtime remains open.
+Status: product-level protocol contract. The current production baseline is a TypeScript WebExtension client and Go native helper, but the wire semantics remain implementation-independent.
 
 ## 1. Purpose
 
@@ -64,6 +64,8 @@ If the native port disconnects, protocol state becomes ambiguous, version negoti
 - surface a recoverable helper/interrupted state to the user;
 - require explicit recovery consistent with the session lifecycle contract.
 
+A production helper configured with durable session authority persists only control metadata (`state`, `session_id`, `recording_epoch`, schema version) in its authority journal. Browsing content is not duplicated into this control-state channel.
+
 ## 4. Recording epoch
 
 Every recording-authorized generation has a monotonically changing `recording_epoch` (an integer or opaque monotonic generation token).
@@ -75,7 +77,7 @@ The epoch changes whenever capture authority changes materially, including at le
 - Resume;
 - Stop;
 - transition to Interrupted;
-- helper recovery that cannot prove continuity safely.
+- helper startup recovery from an unfinished `RECORDING`/`PAUSED` lifetime.
 
 Every observation message carries the `session_id` and `recording_epoch` under which it was produced.
 
@@ -155,12 +157,20 @@ Conceptual handshake:
     "helper_version": "...",
     "compatible": true,
     "required_capabilities": [],
-    "session_state": "IDLE",
-    "session_id": null,
-    "recording_epoch": 12
+    "helper_capabilities": [
+      "observation_schema_v1",
+      "recording_epoch_v1",
+      "fail_closed_disconnect_v1",
+      "durable_session_authority_v1"
+    ],
+    "session_state": "INTERRUPTED",
+    "session_id": "ses_...",
+    "recording_epoch": 13
   }
 }
 ```
+
+`durable_session_authority_v1` is advertised **only when the current helper instance is actually backed by the durable authority repository**. An in-memory/reference handler must not claim it merely because the executable contains the implementation.
 
 If either side cannot satisfy a required privacy/capture capability, recording must not start.
 
@@ -285,13 +295,13 @@ Allowed baseline responses:
 
 Do not send processed screenshots back to the browser in the baseline design.
 
-## 11. Observation acknowledgement
+## 11. Acknowledgement and failure reason codes
 
-Content-bearing messages should receive an acknowledgement containing at least:
+Content-bearing and lifecycle messages receive small acknowledgements such as:
 
 ```json
 {
-  "kind": "observation.ack",
+  "kind": "ack",
   "payload": {
     "accepted": false,
     "reason": "STALE_EPOCH"
@@ -310,6 +320,14 @@ Representative reason codes:
 - `PRIVACY_VIOLATION`
 - `PAYLOAD_TOO_LARGE`
 - `BACKPRESSURE`
+- `STORE_NOT_CONFIGURED`
+- `STORE_UNAVAILABLE`
+- `STORE_ERROR`
+- `STATE_PERSISTENCE_ERROR`
+
+When a lifecycle transition fails because helper-authoritative control state could not be durably committed, `STATE_PERSISTENCE_ERROR` includes the helper's **current safe state/session/epoch**. In particular, failure while attempting to leave active recording may report `INTERRUPTED` with a fresh epoch because capture authority has already been revoked in memory.
+
+An unsuccessful acknowledgement must never be interpreted optimistically by the extension. If the returned state/epoch changes, the extension applies that non-recording authority and invalidates old capture tokens.
 
 Rejecting an observation must not cause the helper to persist rejected content payloads for debugging.
 
@@ -350,13 +368,25 @@ Diagnostics should use:
 
 Debug builds that expose payloads require explicit developer action and must not become the production default.
 
-## 14. Reconnect/recovery
+## 14. Reconnect/restart recovery
 
 A new native connection performs a fresh handshake.
 
 The extension must not assume that a previous `RECORDING` authority remains valid merely because it reconnected.
 
-The helper decides whether safe continuity can be proven. Otherwise the session follows the product `INTERRUPTED` recovery path and requires explicit user action.
+For a helper instance with `durable_session_authority_v1`:
+
+1. helper loads the latest durable authority snapshot before serving the handshake;
+2. a persisted unfinished `RECORDING` or `PAUSED` snapshot is converted to `INTERRUPTED`;
+3. the epoch is advanced;
+4. that `INTERRUPTED` snapshot is durably committed;
+5. only then may `hello.ack` expose the recovered authority.
+
+If the startup interruption cannot be durably committed, helper initialization fails instead of exposing the stale recording state.
+
+An already `INTERRUPTED` snapshot stays interrupted across later restarts without repeatedly advancing the epoch. Resuming from `INTERRUPTED` always requires an explicit lifecycle request and a ready durable observation/key path.
+
+See `docs/DURABLE_SESSION_AUTHORITY.md` for the control-state persistence contract.
 
 ## 15. Protocol testing requirements
 
@@ -372,15 +402,19 @@ Browser-independent tests must cover at minimum:
 - excluded/private observation carrying forbidden URL/title/content;
 - oversized payload rejection;
 - late chunk/observation after epoch change;
-- helper acknowledgements never echoing sensitive payloads.
+- helper acknowledgements never echoing sensitive payloads;
+- persisted `RECORDING`/`PAUSED` reopening only as `INTERRUPTED` with a fresh epoch;
+- state-persistence failure never leaving active capture authority live;
+- durable-authority capability not being advertised by ephemeral/in-memory helper wiring.
 
-See #24/#25.
+See the production Go helper tests and independent reference harnesses.
 
 ## 16. References
 
 - Chrome Native Messaging: https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging
 - MDN Native Messaging: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging
 - Capture architecture: `docs/CAPTURE_ARCHITECTURE.md`
+- Durable session authority: `docs/DURABLE_SESSION_AUTHORITY.md`
 - Product contract: `docs/PRODUCT_SPEC.md`
 
 Concrete serialization/library choices remain implementation details as long as they preserve this contract.
