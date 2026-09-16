@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://curiotrace.local/schemas/observation-v1.schema.json",
+  "title": "CurioTrace Observation Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "session_id",
+    "recording_epoch",
+    "event_type",
+    "wall_time",
+    "monotonic_ms",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "recording_epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "event_type": {
+      "enum": [
+        "session_state",
+        "navigation",
+        "visibility",
+        "content_observation",
+        "interaction",
+        "privacy_decision",
+        "capture_status",
+        "gap_error"
+      ]
+    },
+    "wall_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "monotonic_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "browser_instance_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "view_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "capture_mode": {
+      "enum": [
+        "dom",
+        "redacted_visual",
+        "fingerprint_only",
+        "metadata_only",
+        "blocked",
+        "failed"
+      ]
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "canonical_url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      },
+      "anyOf": [
+        {"required": ["url"]},
+        {"required": ["canonical_url"]}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"event_type": {"const": "content_observation"}},
+        "required": ["event_type"]
+      },
+      "then": {
+        "required": ["capture_mode"]
+      }
+    },
+    {
+      "if": {
+        "properties": {"capture_mode": {"const": "blocked"}},
+        "required": ["capture_mode"]
+      },
+      "then": {
+        "not": {"required": ["source"]},
+        "properties": {
+          "payload": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {"required": ["text"]},
+                {"required": ["units"]},
+                {"required": ["ocr_text"]},
+                {"required": ["image"]},
+                {"required": ["image_bytes"]},
+                {"required": ["raster"]},
+                {"required": ["raster_base64"]},
+                {"required": ["thumbnail"]}
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"capture_mode": {"const": "fingerprint_only"}},
+        "required": ["capture_mode"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {"required": ["text"]},
+                {"required": ["units"]},
+                {"required": ["ocr_text"]},
+                {"required": ["image"]},
+                {"required": ["image_bytes"]},
+                {"required": ["raster"]},
+                {"required": ["raster_base64"]},
+                {"required": ["thumbnail"]}
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"capture_mode": {"const": "redacted_visual"}},
+        "required": ["capture_mode"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {"required": ["image"]},
+                {"required": ["image_bytes"]},
+                {"required": ["raster"]},
+                {"required": ["raster_base64"]},
+                {"required": ["thumbnail"]}
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"capture_mode": {"const": "metadata_only"}},
+        "required": ["capture_mode"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {"required": ["text"]},
+                {"required": ["units"]},
+                {"required": ["ocr_text"]},
+                {"required": ["image"]},
+                {"required": ["image_bytes"]},
+                {"required": ["raster"]},
+                {"required": ["raster_base64"]},
+                {"required": ["thumbnail"]}
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
