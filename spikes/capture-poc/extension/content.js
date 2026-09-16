@@ -1,4 +1,7 @@
 (() => {
+  if (globalThis.__curioTraceCapturePocInstalled) return;
+  globalThis.__curioTraceCapturePocInstalled = true;
+
   const MASK_ATTR = "data-curiotrace-poc-mask";
 
   function isEditable(el) {
