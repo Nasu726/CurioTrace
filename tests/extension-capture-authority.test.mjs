@@ -30,6 +30,31 @@ test("current recording authority allows capture", () => {
   assert.equal(started.token.recordingEpoch, 7);
 });
 
+test("local suspension blocks new and in-flight capture before Pause ack arrives", () => {
+  const authority = new CaptureAuthority();
+  recording(authority, { epoch: 8 });
+  const inFlight = authority.beginCapture().token;
+
+  authority.suspendLocalCapture();
+
+  assert.equal(authority.snapshot.sessionState, "RECORDING");
+  assert.equal(authority.snapshot.localCaptureEnabled, false);
+  assert.equal(authority.beginCapture().allowed, false);
+
+  let called = false;
+  const finalized = authority.finalizeCapture(inFlight, () => {
+    called = true;
+    return { event_type: "content_observation" };
+  });
+  assert.equal(finalized.accepted, false);
+  assert.equal(called, false);
+
+  // A fresh helper state is required to restore capture authority.
+  authority.applyHelperState({ state: "PAUSED", sessionId: "ses_test", recordingEpoch: 9 });
+  authority.applyHelperState({ state: "RECORDING", sessionId: "ses_test", recordingEpoch: 10 });
+  assert.equal(authority.beginCapture().allowed, true);
+});
+
 test("Pause invalidates an in-flight capture token", () => {
   const authority = new CaptureAuthority();
   recording(authority, { epoch: 10 });
