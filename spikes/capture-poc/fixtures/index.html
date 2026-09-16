@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CurioTrace capture PoC fixture</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 32px auto; line-height: 1.5; }
+  .arbitrary-secret { border: 2px solid #b00; padding: 12px; margin: 16px 0; }
+  iframe { display: block; width: 95%; height: 120px; margin: 16px 0; }
+  .spacer { height: 700px; background: linear-gradient(#eee, #fff); }
+</style>
+<h1>CurioTrace visible text</h1>
+<p>This ordinary paragraph should appear in both the DOM report and the screenshot.</p>
+
+<label>Ordinary input: <input value="typed secret should not be retained"></label><br>
+<label>Password: <input type="password" value="hunter2"></label>
+<div contenteditable="true">Editable text should be treated as form-like content.</div>
+
+<div class="arbitrary-secret">
+  Visible arbitrary confidential-looking text: <strong>API_KEY_EXAMPLE_123</strong>.
+  The PoC intentionally does not know that this is sensitive.
+</div>
+
+<canvas id="canvas" width="700" height="80"></canvas>
+
+<h2>Same-origin iframe</h2>
+<iframe src="frame.html"></iframe>
+
+<h2>Cross-origin iframe</h2>
+<p>Run a second fixture server on port 8766 to populate this frame.</p>
+<iframe src="http://127.0.0.1:8766/cross.html"></iframe>
+
+<div class="spacer"></div>
+<p id="bottom">Bottom paragraph after scrolling. Capture again after scrolling to test event-driven viewport changes.</p>
+
+<script>
+  const ctx = document.getElementById('canvas').getContext('2d');
+  ctx.font = '24px sans-serif';
+  ctx.fillText('Canvas text: DOM text extraction should not see this.', 10, 45);
+</script>
