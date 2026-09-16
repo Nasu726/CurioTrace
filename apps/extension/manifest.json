@@ -19,5 +19,10 @@
   },
   "action": {
     "default_title": "CurioTrace"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "curiotrace@nasu.uk"
+    }
   }
 }
