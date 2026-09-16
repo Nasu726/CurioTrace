@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 )
 
@@ -20,11 +22,11 @@ const (
 )
 
 var (
-	snapshotLogMagic      = [8]byte{'C', 'T', 'S', 'T', 'A', 'T', 'E', '1'}
-	snapshotCRCTable      = crc32.MakeTable(crc32.Castagnoli)
-	ErrCorruptStateLog    = errors.New("corrupt durable session state log")
-	ErrStateLogTooLarge   = errors.New("durable session state log too large")
-	ErrInvalidStateStore  = errors.New("invalid durable session state store configuration")
+	snapshotLogMagic     = [8]byte{'C', 'T', 'S', 'T', 'A', 'T', 'E', '1'}
+	snapshotCRCTable     = crc32.MakeTable(crc32.Castagnoli)
+	ErrCorruptStateLog   = errors.New("corrupt durable session state log")
+	ErrStateLogTooLarge  = errors.New("durable session state log too large")
+	ErrInvalidStateStore = errors.New("invalid durable session state store configuration")
 )
 
 type persistedSnapshot struct {
@@ -193,7 +195,7 @@ func (r *FileSnapshotRepository) scanLocked(ctx context.Context, file *os.File, 
 	if _, err := io.ReadFull(file, header); err != nil {
 		return zero, false, ErrCorruptStateLog
 	}
-	if string(header) != string(snapshotLogMagic[:]) {
+	if !bytes.Equal(header, snapshotLogMagic[:]) {
 		return zero, false, ErrCorruptStateLog
 	}
 
@@ -254,12 +256,13 @@ func (r *FileSnapshotRepository) scanLocked(ctx context.Context, file *os.File, 
 
 func decodePersistedSnapshot(payload []byte) (Snapshot, error) {
 	var record persistedSnapshot
-	decoder := json.NewDecoder(bytesReader(payload))
+	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&record); err != nil {
 		return Snapshot{}, fmt.Errorf("%w: decode snapshot: %v", ErrCorruptStateLog, err)
 	}
-	if decoder.More() {
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return Snapshot{}, ErrCorruptStateLog
 	}
 	if record.Version != snapshotSchemaVersion {
@@ -304,6 +307,12 @@ func writeAllState(writer io.Writer, data []byte) error {
 }
 
 func syncStateDirectory(root string) error {
+	// Directory fsync is meaningful on Unix. Go/Windows does not provide a
+	// portable directory handle sync contract; the state file itself is still
+	// synchronously flushed before Start/Resume acknowledgement.
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	dir, err := os.Open(root)
 	if err != nil {
 		return fmt.Errorf("open session state directory for sync: %w", err)
@@ -320,24 +329,4 @@ func contextErr(ctx context.Context) error {
 		return nil
 	}
 	return ctx.Err()
-}
-
-// bytesReader is kept local so the decoder can enforce a strict single object
-// without exposing a reusable parsing helper outside the session-state layer.
-func bytesReader(data []byte) *byteSliceReader {
-	return &byteSliceReader{data: data}
-}
-
-type byteSliceReader struct {
-	data []byte
-	off  int
-}
-
-func (r *byteSliceReader) Read(p []byte) (int, error) {
-	if r.off >= len(r.data) {
-		return 0, io.EOF
-	}
-	n := copy(p, r.data[r.off:])
-	r.off += n
-	return n, nil
 }
