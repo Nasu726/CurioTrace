@@ -1,22 +1,6 @@
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const SESSION_HOSTS = ["http://*/*", "https://*/*"];
 
-async function requestSessionHostAccess() {
-  try {
-    const alreadyGranted = await chrome.permissions.contains({ origins: SESSION_HOSTS });
-    if (alreadyGranted) return { granted: true, prompted: false, error: null };
-
-    const granted = await chrome.permissions.request({ origins: SESSION_HOSTS });
-    return { granted, prompted: true, error: null };
-  } catch (error) {
-    return {
-      granted: false,
-      prompted: false,
-      error: String(error?.message || error)
-    };
-  }
-}
-
 async function injectContentScript(tabId) {
   try {
     await chrome.scripting.executeScript({
@@ -29,9 +13,21 @@ async function injectContentScript(tabId) {
   }
 }
 
-chrome.action.onClicked.addListener(async (tab) => {
+async function runCapturePoc() {
+  const permissionGranted = await chrome.permissions.contains({ origins: SESSION_HOSTS });
+  if (!permissionGranted) {
+    return {
+      ok: false,
+      message: "Required website-access permission is missing. No capture was performed."
+    };
+  }
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) {
+    return { ok: false, message: "No active tab is available for the capture test." };
+  }
+
   const startedAt = performance.now();
-  const permission = await requestSessionHostAccess();
   const injection = await injectContentScript(tab.id);
 
   let report = null;
@@ -71,7 +67,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     lastCapturePoc: {
       capturedAt: new Date().toISOString(),
       tab: { id: tab.id, url: tab.url, title: tab.title },
-      permission,
+      permission: { granted: true },
       injection,
       report,
       domError,
@@ -83,4 +79,15 @@ chrome.action.onClicked.addListener(async (tab) => {
   });
 
   await chrome.tabs.create({ url: chrome.runtime.getURL("result.html") });
+  return { ok: true };
+}
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== "RUN_CAPTURE_POC") return;
+
+  runCapturePoc()
+    .then(sendResponse)
+    .catch((error) => sendResponse({ ok: false, message: String(error?.message || error) }));
+
+  return true;
 });
