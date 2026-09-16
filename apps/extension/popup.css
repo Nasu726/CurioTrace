@@ -1,0 +1,136 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 340px;
+  background: Canvas;
+  color: CanvasText;
+}
+
+.shell {
+  padding: 16px;
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.brand {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin-top: 2px;
+  font-size: 11px;
+  color: GrayText;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: GrayText;
+  flex: 0 0 auto;
+}
+
+.status-dot.recording {
+  background: #d93025;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #d93025 18%, transparent);
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.detail,
+.scope-note,
+.error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.detail,
+.scope-note {
+  color: GrayText;
+}
+
+.error {
+  color: #b3261e;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.actions.vertical {
+  flex-direction: column;
+}
+
+button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, CanvasText 22%, transparent);
+  border-radius: 8px;
+  background: ButtonFace;
+  color: ButtonText;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(0.97);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button.primary {
+  border-color: transparent;
+  background: #1a73e8;
+  color: white;
+}
+
+button.danger {
+  color: #b3261e;
+}
+
+.permission-panel {
+  padding-top: 2px;
+}
+
+.scope-note {
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+  border-radius: 8px;
+}
+
+footer {
+  min-height: 18px;
+  margin-top: 12px;
+}
+
+.reason-code {
+  font: 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: GrayText;
+}
