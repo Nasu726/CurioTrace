@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CurioTrace Capture PoC</title>
+<style>
+  body { font: 14px system-ui, sans-serif; width: 320px; margin: 16px; line-height: 1.45; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  p { margin: 8px 0; }
+  ul { padding-left: 20px; }
+  button { width: 100%; padding: 9px 12px; margin-top: 10px; }
+  #status { margin-top: 10px; white-space: pre-wrap; font-size: 12px; }
+</style>
+<h1>Why CurioTrace asks for website access</h1>
+<p>This PoC needs permission to read ordinary HTTP/HTTPS pages while a recording session is active so it can follow browsing across sites and reconstruct what was actually visible.</p>
+<ul>
+  <li>Installing the extension alone does not start capture.</li>
+  <li>Private/incognito and excluded pages remain outside the intended capture scope.</li>
+  <li>The permission is not consent to send page contents to an external model.</li>
+  <li>If you decline the website-access permission, the recording test will not start.</li>
+</ul>
+<button id="run">Continue and request website access</button>
+<div id="status" role="status"></div>
+<script src="popup.js"></script>
