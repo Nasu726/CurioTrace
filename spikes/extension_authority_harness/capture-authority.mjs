@@ -4,6 +4,7 @@ export class CaptureAuthority {
   #sessionState = "IDLE";
   #sessionId = null;
   #recordingEpoch = null;
+  #localCaptureEnabled = false;
 
   get snapshot() {
     return Object.freeze({
@@ -12,6 +13,7 @@ export class CaptureAuthority {
       sessionState: this.#sessionState,
       sessionId: this.#sessionId,
       recordingEpoch: this.#recordingEpoch,
+      localCaptureEnabled: this.#localCaptureEnabled,
       captureAllowed: this.captureAllowed,
     });
   }
@@ -19,6 +21,7 @@ export class CaptureAuthority {
   get captureAllowed() {
     return Boolean(
       this.#helperConnected &&
+      this.#localCaptureEnabled &&
       this.#sessionState === "RECORDING" &&
       this.#sessionId &&
       Number.isInteger(this.#recordingEpoch)
@@ -32,6 +35,7 @@ export class CaptureAuthority {
     this.#sessionState = "IDLE";
     this.#sessionId = null;
     this.#recordingEpoch = null;
+    this.#localCaptureEnabled = false;
     return this.snapshot;
   }
 
@@ -41,6 +45,15 @@ export class CaptureAuthority {
     this.#sessionState = "INTERRUPTED";
     this.#sessionId = null;
     this.#recordingEpoch = null;
+    this.#localCaptureEnabled = false;
+    return this.snapshot;
+  }
+
+  suspendLocalCapture() {
+    // Used before sending Pause/Stop or when authority becomes uncertain.
+    // Capture never resumes merely because a control request failed; a fresh
+    // authoritative helper state must be applied.
+    this.#localCaptureEnabled = false;
     return this.snapshot;
   }
 
@@ -55,6 +68,7 @@ export class CaptureAuthority {
 
     if (state === "RECORDING") {
       if (!sessionId || !Number.isInteger(recordingEpoch)) {
+        this.#localCaptureEnabled = false;
         return { accepted: false, reason: "INCOMPLETE_RECORDING_AUTHORITY" };
       }
     }
@@ -62,6 +76,7 @@ export class CaptureAuthority {
     this.#sessionState = state;
     this.#sessionId = sessionId;
     this.#recordingEpoch = recordingEpoch;
+    this.#localCaptureEnabled = state === "RECORDING";
     return { accepted: true, reason: "OK", snapshot: this.snapshot };
   }
 
