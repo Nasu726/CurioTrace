@@ -65,12 +65,15 @@ func NewFileStore(root string, codec RecordCodec) (*FileStore, error) {
 	}, nil
 }
 
-func (s *FileStore) Append(_ context.Context, event observation.ValidatedEvent) error {
+func (s *FileStore) Append(ctx context.Context, event observation.ValidatedEvent) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	sessionID := event.SessionID()
-	index, err := s.ensureIndexLocked(sessionID)
+	index, err := s.ensureIndexLocked(ctx, sessionID)
 	if err != nil {
 		return err
 	}
@@ -86,7 +89,7 @@ func (s *FileStore) Append(_ context.Context, event observation.ValidatedEvent) 
 		return ErrEventIDConflict
 	}
 
-	record, err := s.codec.Encode(event)
+	record, err := s.codec.Encode(ctx, event)
 	if err != nil {
 		return fmt.Errorf("encode durable event: %w", err)
 	}
@@ -120,7 +123,10 @@ func (s *FileStore) Append(_ context.Context, event observation.ValidatedEvent) 
 	return nil
 }
 
-func (s *FileStore) ListSession(_ context.Context, sessionID string) ([]observation.ValidatedEvent, error) {
+func (s *FileStore) ListSession(ctx context.Context, sessionID string) ([]observation.ValidatedEvent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -133,7 +139,7 @@ func (s *FileStore) ListSession(_ context.Context, sessionID string) ([]observat
 	}
 	defer file.Close()
 
-	events, index, err := s.scanAndRepair(file, sessionID)
+	events, index, err := s.scanAndRepair(ctx, file, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +147,10 @@ func (s *FileStore) ListSession(_ context.Context, sessionID string) ([]observat
 	return events, nil
 }
 
-func (s *FileStore) DeleteSession(_ context.Context, sessionID string) error {
+func (s *FileStore) DeleteSession(ctx context.Context, sessionID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -153,7 +162,7 @@ func (s *FileStore) DeleteSession(_ context.Context, sessionID string) error {
 	return nil
 }
 
-func (s *FileStore) ensureIndexLocked(sessionID string) (map[string][32]byte, error) {
+func (s *FileStore) ensureIndexLocked(ctx context.Context, sessionID string) (map[string][32]byte, error) {
 	if index, ok := s.indexes[sessionID]; ok {
 		return index, nil
 	}
@@ -163,7 +172,7 @@ func (s *FileStore) ensureIndexLocked(sessionID string) (map[string][32]byte, er
 		return nil, err
 	}
 	defer file.Close()
-	_, index, err := s.scanAndRepair(file, sessionID)
+	_, index, err := s.scanAndRepair(ctx, file, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +227,7 @@ func (s *FileStore) writeHeader(file *os.File) error {
 	return file.Sync()
 }
 
-func (s *FileStore) scanAndRepair(file *os.File, expectedSessionID string) ([]observation.ValidatedEvent, map[string][32]byte, error) {
+func (s *FileStore) scanAndRepair(ctx context.Context, file *os.File, expectedSessionID string) ([]observation.ValidatedEvent, map[string][32]byte, error) {
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, nil, err
 	}
@@ -235,6 +244,9 @@ func (s *FileStore) scanAndRepair(file *os.File, expectedSessionID string) ([]ob
 	}
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
 		var frameHeader [8]byte
 		n, err := io.ReadFull(file, frameHeader[:])
 		if errors.Is(err, io.EOF) && n == 0 {
@@ -269,7 +281,7 @@ func (s *FileStore) scanAndRepair(file *os.File, expectedSessionID string) ([]ob
 			return nil, nil, ErrCorruptRecord
 		}
 
-		event, err := s.codec.Decode(record)
+		event, err := s.codec.Decode(ctx, record)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%w: decode record: %v", ErrCorruptRecord, err)
 		}
