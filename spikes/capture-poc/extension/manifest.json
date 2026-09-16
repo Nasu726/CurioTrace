@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "CurioTrace Capture PoC",
+  "version": "0.0.1",
+  "description": "Disposable capture/masking spike for CurioTrace issue #8.",
+  "permissions": ["tabs", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_title": "Run CurioTrace capture PoC"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "all_frames": false,
+      "run_at": "document_idle"
+    }
+  ]
+}
