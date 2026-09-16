@@ -43,6 +43,7 @@ Owns browser-context information that the native helper cannot safely infer:
 - editable/sensitive region geometry;
 - selection/copy observations allowed by the privacy contract;
 - active-tab viewport screenshot acquisition after the privacy gate;
+- **immediate in-extension raster redaction before native transfer where DOM-safe geometry exists**;
 - event-driven scheduling and capture eligibility decisions.
 
 ### Native helper
@@ -51,8 +52,7 @@ Acts as CurioTrace's trusted local backend, not as an OS-wide screen recorder:
 
 - session state authority shared across supported browsers;
 - application-private temporary and durable storage;
-- immediate raster redaction / image processing where used;
-- fallback OCR;
+- OCR / image processing on already-redacted raster inputs where possible;
 - visual fingerprints/content matching/exposure analysis where appropriate;
 - encryption/cleanup/lifecycle enforcement;
 - MCP server for external frontier-model summarization;
@@ -66,19 +66,33 @@ Native Messaging is preferred over an unauthenticated localhost HTTP service for
 
 Do not require broad HTTP/HTTPS host access merely because the extension is installed.
 
+The extension may be installed and its helper may be present without browsing-content capture authorization.
+
 ### First explicit Start
 
-Use MV3 runtime optional host permissions to explain and request the web-page access required for zero-friction cross-site session recording.
+Use MV3 runtime optional host permissions for HTTP/HTTPS website access.
 
-Chrome and Firefox both support `optional_host_permissions` / `permissions.request()`.
+Before the browser permission dialog appears, CurioTrace shows its own concise explanation. The explanation must state:
 
-The browser-granted permission is capability, not recording authorization. CurioTrace's own session state remains stricter:
+1. **why the access is broad:** one explicit session can navigate across unrelated sites/tabs, and site-by-site permissions would create silent gaps that make the trace unreliable;
+2. **when capture happens:** installation/background residency alone does not capture browsing content; capture is gated by explicit `RECORDING` state;
+3. **what remains excluded:** private/incognito and configured exclusions remain outside the normal capture scope;
+4. **what the permission does not authorize:** website access is not consent to send browsing content to Claude/Codex/another external model; external summarization is a separate authorization boundary;
+5. **what denial means:** CurioTrace will not start a partial recording that appears complete.
+
+Only after the user explicitly continues does CurioTrace call the browser runtime permission API.
+
+If the required broad HTTP/HTTPS host access is denied or unavailable, `Start` fails closed: the session does **not** enter `RECORDING`, and no DOM/screenshot capture occurs.
+
+Once granted, browser host permission is only a capability. CurioTrace's own state remains stricter:
 
 - `IDLE`: no capture;
 - `RECORDING`: capture allowed surfaces;
 - `PAUSED`: no capture.
 
-A missing required host permission must not silently produce a session represented as complete.
+The product UI/listing must avoid implying that broad permission means CurioTrace continuously reads every website.
+
+Chrome and Firefox support optional host permissions / runtime permission requests; exact prompts and store disclosure requirements remain browser-specific.
 
 ## 5. Recording-scoped content scripts
 
@@ -87,6 +101,8 @@ Use `scripting.registerContentScripts()` at Start and unregister on Pause/Stop w
 Chrome and Firefox support dynamic registration in MV3.
 
 Important: unregistering does not remove already-injected code from an open page. Therefore injected scripts must contain their own explicit inactive state and stop observers when recording authorization is removed. Privacy must never depend solely on unregistering future injections.
+
+Firefox MV3 currently uses background scripts/event pages while Chromium uses an extension service worker. Keep the semantic state machine common even where manifest/background implementation differs.
 
 ## 6. Three capture tiers
 
@@ -106,10 +122,10 @@ Capture/derive:
 For a transient raster:
 
 1. capture active-tab pixels;
-2. redact known sensitive/editable regions inside CurioTrace's trusted local pipeline;
-3. OCR/hash only the redacted representation;
+2. redact known sensitive/editable/opaque-frame rectangles **inside the extension runtime while the image remains transient**;
+3. pass only the redacted representation to the native helper when OCR/image processing is needed;
 4. persist only allowed derived/compact information;
-5. discard raster data.
+5. discard the transient raster representation after the required local processing.
 
 OCR should be a fallback for rendered information DOM cannot represent well, not the normal path for ordinary HTML.
 
@@ -123,7 +139,7 @@ Because CurioTrace cannot reliably find PDF form/editable regions there, default
 - transiently capture the viewport only for visual-change/content-identity fingerprinting;
 - do **not** OCR the unredacted raster;
 - do not persist pixels;
-- discard pixels immediately after fingerprint extraction;
+- discard pixels immediately after fingerprint extraction/necessary capture metadata;
 - record that semantic viewport content was unavailable because of the privacy boundary.
 
 This preserves some exposure/revisit information without retaining PDF text or possible typed form values.
@@ -149,19 +165,26 @@ If frame content cannot be inspected reliably:
 
 The empirical matrix must test normal cross-origin, sandboxed, nested, and opaque-origin cases.
 
-## 8. Redaction transport
+## 8. Redaction and native transport
 
-The current PoC uses visible magenta overlays only to prove geometry/masking feasibility. That is not preferred product UX.
+The preferred production direction is:
 
-Preferred production direction is transient screenshot -> trusted local redaction.
+`captureVisibleTab -> extension-memory redaction -> redacted raster/metadata -> Native Messaging -> helper`
 
-Native Messaging message-size limits make extension-to-helper viewport transfer technically plausible:
+Standard Canvas / `OffscreenCanvas` processing makes in-extension redaction technically plausible. The current PoC uses `OffscreenCanvas` to scale DOM mask rectangles into screenshot pixel coordinates and stores only the redacted inspection image on DOM-inspectable pages.
 
-- Chrome: up to 64 MiB per message sent from extension to native host;
-- Firefox: documented extension-to-host limit is much larger;
-- native host -> browser is limited to 1 MiB, so processed images should remain in the helper and only small metadata/results should return.
+On DOM-unavailable surfaces the PoC does not persist the captured raster; it records only capture success/dimensions and discards the unredacted pixels, matching the Tier-2 direction.
 
-This must still be benchmarked for latency/memory. Raw pixels must never be logged or durably written as part of the default path.
+Why redact before the helper:
+
+- it minimizes the lifetime/scope of known sensitive pixels;
+- it avoids sending known editable/form/frame pixels over Native Messaging unredacted;
+- it makes the extension -> helper interface easier to audit;
+- it aligns with browser-store disclosure requirements that treat browsing data/native messaging as sensitive handling/transmission.
+
+Native Messaging message-size limits still need empirical benchmarking for redacted viewport images. Processed images should remain in the helper when possible; return only small metadata/results to the extension.
+
+Raw/unredacted pixels must never be intentionally logged or durably written by the default path.
 
 ## 9. Capture scheduling
 
@@ -181,23 +204,34 @@ Debounce/coalesce events and stay comfortably below browser screenshot-rate limi
 
 ## 10. Copyright consequence
 
-CurioTrace captures the viewport/session evidence, not an entire document archive.
+CurioTrace captures viewport/session evidence, not an entire document archive.
 
 - Do not fetch a complete page/PDF merely because the user viewed part of it unless a later explicitly justified feature requires it.
 - Full OCR/page text is ephemeral processing material, not durable storage.
 - Persist URL/title/time, exposure/revisit evidence, compact observed semantics, and only limited justified exact excerpts.
 - Let the downstream LLM Wiki independently retrieve source URLs when appropriate.
 
-## 11. Empirical matrix still required
+## 11. Store/release privacy consequence
+
+Browser-store policy is tracked in #22 and is a public-release gate.
+
+At minimum:
+
+- Chrome store disclosures/privacy policy must state that CurioTrace handles browsing activity/page content as part of its prominent single purpose, even when processing/storage is local;
+- Firefox disclosures/consent must account for browsing data sent to the local native helper because Mozilla policy treats Native Messaging as data transmission outside the add-on/local browser;
+- the host-permission explanation, store listing, privacy policy, native-helper flow, and actual implementation must agree;
+- external frontier-model transfer remains separately authorized from website host access/local native processing.
+
+## 12. Empirical matrix still required
 
 Issue #8 must not close until a normal developer browser environment runs the PoC and records at least:
 
-| Browser/surface | host permission | DOM works | sensitive geometry known | screenshot works | mask/redaction feasible | capture latency | notes |
+| Browser/surface | host permission | DOM works | sensitive geometry known | screenshot works | in-extension redaction feasible | capture latency | notes |
 |---|---|---:|---:|---:|---:|---:|---|
 | Chrome ordinary HTML | pending | pending | pending | pending | pending | pending | |
 | Edge ordinary HTML | pending | pending | pending | pending | pending | pending | |
-| Chrome PDF viewer | n/a/restricted | expected no | expected no | pending | fingerprint-only candidate | pending | |
-| Edge PDF viewer | n/a/restricted | expected no | expected no | pending | fingerprint-only candidate | pending | |
+| Chrome PDF viewer | n/a/restricted | expected no | expected no | pending | n/a/fingerprint-only | pending | |
+| Edge PDF viewer | n/a/restricted | expected no | expected no | pending | n/a/fingerprint-only | pending | |
 | same-origin iframe | pending | pending | pending | n/a | pending | n/a | |
 | cross-origin iframe | pending | pending | pending | n/a | pending | n/a | |
 | sandboxed/nested iframe | pending | pending | pending | n/a | pending | n/a | |
@@ -208,14 +242,17 @@ Issue #8 must not close until a normal developer browser environment runs the Po
 
 The repository PoC lives under `spikes/capture-poc/`.
 
-## 12. What would invalidate the recommendation
+Static JavaScript syntax checks currently pass; browser-specific API behavior remains empirical.
+
+## 13. What would invalidate the recommendation
 
 Reconsider the hybrid recommendation if empirical testing shows any of the following:
 
-- runtime permissions cannot support the intended recording UX across target browsers;
+- runtime permissions cannot support the explained first-Start UX across target browsers;
 - screenshot capture routinely includes pixels outside the intended active-tab content scope;
 - DOM geometry cannot support reliable redaction on ordinary pages;
-- native-message image transfer is too slow/memory-heavy for reasonable event-driven use;
+- in-extension raster redaction is too slow/memory-heavy for reasonable event-driven use;
+- redacted native-message image transfer is too slow/memory-heavy;
 - cross-origin frame behavior forces unacceptable data loss or unsafe capture;
 - Firefox parity requires a substantially different semantic architecture rather than implementation adaptation.
 
