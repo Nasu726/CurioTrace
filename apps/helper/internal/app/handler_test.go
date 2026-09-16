@@ -101,7 +101,7 @@ func TestPrivacyInvalidObservationNeverReachesStore(t *testing.T) {
 		"capture_mode":    "fingerprint_only",
 		"payload": map[string]any{
 			"visual_fingerprint": "abc",
-			"ocr_text":          "must not persist",
+			"ocr_text":           "must not persist",
 		},
 	}))
 	result := payloadMap(t, response)
