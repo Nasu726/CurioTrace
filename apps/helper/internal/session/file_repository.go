@@ -30,8 +30,8 @@ var (
 )
 
 type persistedSnapshot struct {
-	Version        int   `json:"version"`
-	State          State `json:"state"`
+	Version        int    `json:"version"`
+	State          State  `json:"state"`
 	SessionID      string `json:"session_id"`
 	RecordingEpoch uint64 `json:"recording_epoch"`
 }
