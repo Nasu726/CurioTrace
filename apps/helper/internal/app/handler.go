@@ -51,8 +51,8 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 		})
 
 	case "session.start":
-		if h.store == nil {
-			return ack(message, false, "STORE_NOT_CONFIGURED", nil)
+		if reason := h.storeUnavailableReason(); reason != "" {
+			return ack(message, false, reason, nil)
 		}
 		snapshot, err := h.authority.Start()
 		if err != nil {
@@ -63,6 +63,9 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 	case "session.pause":
 		return h.transition(message, h.authority.Pause)
 	case "session.resume":
+		if reason := h.storeUnavailableReason(); reason != "" {
+			return ack(message, false, reason, nil)
+		}
 		return h.transition(message, h.authority.Resume)
 	case "session.stop":
 		return h.transition(message, h.authority.Stop)
@@ -73,6 +76,16 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 	default:
 		return ack(message, false, "UNKNOWN_MESSAGE_KIND", nil)
 	}
+}
+
+func (h *Handler) storeUnavailableReason() string {
+	if h.store == nil {
+		return "STORE_NOT_CONFIGURED"
+	}
+	if err := h.store.Ready(context.Background()); err != nil {
+		return "STORE_UNAVAILABLE"
+	}
+	return ""
 }
 
 func (h *Handler) handleObservation(message protocol.Envelope) protocol.Envelope {
@@ -112,7 +125,8 @@ func (h *Handler) handleObservation(message protocol.Envelope) protocol.Envelope
 		return ack(message, false, "STORE_NOT_CONFIGURED", nil)
 	}
 	if err := h.store.Append(context.Background(), validated); err != nil {
-		return ack(message, false, "STORE_ERROR", nil)
+		interrupted := h.authority.Interrupt()
+		return ack(message, false, "STORE_ERROR", statePayload(interrupted))
 	}
 	return ack(message, true, "OK", nil)
 }
