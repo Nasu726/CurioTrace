@@ -33,6 +33,23 @@ A production provider must:
 
 OS-specific key-storage adapters are a separate implementation step. Until a production provider is configured, normal recording must remain unavailable rather than falling back to plaintext durable storage.
 
+## Start readiness gate
+
+A configured store is not sufficient evidence that recording can safely begin. Before helper authority enters `RECORDING`, the helper calls the durable store readiness path:
+
+```text
+session.start
+  -> Store.Ready
+  -> FileStore.Ready
+  -> RecordCodec.Ready
+  -> KeyProvider.CurrentKey
+  -> validate current AES-256 key material
+```
+
+Any failure rejects Start with the helper remaining `IDLE`. This prevents a known-unavailable key service or malformed current key from creating a session that can capture observations but cannot persist them.
+
+Readiness is a preflight, not a promise that I/O can never fail later. Mid-session storage/key failures must still fail closed and are handled as runtime persistence failures rather than silently falling back to plaintext.
+
 ## Rotation
 
 Rotation changes the `CurrentKey` result. Existing records retain their original key IDs and remain decryptable through `KeyByID`. Removing a historical key is therefore a destructive retention action for records encrypted under that key and must not happen accidentally.
