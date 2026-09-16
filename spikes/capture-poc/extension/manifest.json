@@ -3,7 +3,7 @@
   "name": "CurioTrace Capture PoC",
   "version": "0.0.1",
   "description": "Disposable capture/masking spike for CurioTrace issue #8.",
-  "permissions": ["tabs", "storage"],
+  "permissions": ["tabs", "storage", "activeTab"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "service-worker.js"
