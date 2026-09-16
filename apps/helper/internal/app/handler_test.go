@@ -24,10 +24,10 @@ func TestHandshakeAndLifecycle(t *testing.T) {
 
 	pause := h.Handle(protocol.Envelope{
 		ProtocolVersion: protocol.Version,
-		MessageID: "p",
-		Kind: "session.pause",
-		SessionID: sessionID,
-		RecordingEpoch: epoch,
+		MessageID:       "p",
+		Kind:            "session.pause",
+		SessionID:       sessionID,
+		RecordingEpoch:  epoch,
 	})
 	pausePayload := payloadMap(t, pause)
 	if pausePayload["accepted"] != true || pausePayload["state"] != "PAUSED" {
@@ -40,10 +40,10 @@ func TestHandshakeAndLifecycle(t *testing.T) {
 
 	stale := h.Handle(protocol.Envelope{
 		ProtocolVersion: protocol.Version,
-		MessageID: "stale",
-		Kind: "session.resume",
-		SessionID: sessionID,
-		RecordingEpoch: epoch,
+		MessageID:       "stale",
+		Kind:            "session.resume",
+		SessionID:       sessionID,
+		RecordingEpoch:  epoch,
 	})
 	if payloadMap(t, stale)["accepted"] != false {
 		t.Fatal("stale control request unexpectedly accepted")
@@ -59,10 +59,10 @@ func TestObservationPipelineFailsClosedUntilImplemented(t *testing.T) {
 
 	response := h.Handle(protocol.Envelope{
 		ProtocolVersion: protocol.Version,
-		Kind: "observation.submit",
-		SessionID: sessionID,
-		RecordingEpoch: epoch,
-		Payload: json.RawMessage(`{"event":{"event_type":"content_observation"}}`),
+		Kind:            "observation.submit",
+		SessionID:       sessionID,
+		RecordingEpoch:  epoch,
+		Payload:         json.RawMessage(`{"event":{"event_type":"content_observation"}}`),
 	})
 	result := payloadMap(t, response)
 	if result["accepted"] != false || result["reason"] != "OBSERVATION_PIPELINE_NOT_IMPLEMENTED" {
