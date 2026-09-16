@@ -20,18 +20,18 @@ import (
 
 const (
 	MaxStoredRecordBytes = 512 * 1024
-	maxCodecIDBytes       = 128
+	maxCodecIDBytes      = 128
 )
 
 var (
-	logMagic             = [8]byte{'C', 'T', 'L', 'O', 'G', '1', '\r', '\n'}
-	crcTable             = crc32.MakeTable(crc32.Castagnoli)
-	ErrInvalidStore      = errors.New("invalid durable store configuration")
-	ErrCodecMismatch     = errors.New("durable log codec mismatch")
-	ErrCorruptRecord     = errors.New("corrupt durable record")
-	ErrRecordTooLarge    = errors.New("durable record too large")
-	ErrSessionMismatch   = errors.New("durable record belongs to another session")
-	ErrEventIDConflict   = errors.New("event id reused with different content")
+	logMagic           = [8]byte{'C', 'T', 'L', 'O', 'G', '1', '\r', '\n'}
+	crcTable           = crc32.MakeTable(crc32.Castagnoli)
+	ErrInvalidStore    = errors.New("invalid durable store configuration")
+	ErrCodecMismatch   = errors.New("durable log codec mismatch")
+	ErrCorruptRecord   = errors.New("corrupt durable record")
+	ErrRecordTooLarge  = errors.New("durable record too large")
+	ErrSessionMismatch = errors.New("durable record belongs to another session")
+	ErrEventIDConflict = errors.New("event id reused with different content")
 )
 
 type FileStore struct {
