@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "CurioTrace",
+  "version": "0.0.0.1",
+  "description": "Explicit-session browsing observation for later personal knowledge reuse.",
+  "permissions": [
+    "nativeMessaging"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "scripts": [
+      "dist/background.js"
+    ],
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "CurioTrace"
+  }
+}
