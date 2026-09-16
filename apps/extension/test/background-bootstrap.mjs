@@ -185,5 +185,6 @@ test("manifest keeps broad hosts optional and supports Chrome/Firefox MV3 backgr
   assert.equal(manifest.background.service_worker, "dist/background.js");
   assert.deepEqual(manifest.background.scripts, ["dist/background.js"]);
   assert.equal(manifest.background.type, "module");
+  assert.equal(manifest.browser_specific_settings.gecko.id, "curiotrace@nasu.uk");
   assert.equal("host_permissions" in manifest, false);
 });
