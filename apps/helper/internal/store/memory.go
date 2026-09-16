@@ -16,6 +16,10 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{sessions: make(map[string][]observation.ValidatedEvent)}
 }
 
+func (s *MemoryStore) Ready(ctx context.Context) error {
+	return ctx.Err()
+}
+
 func (s *MemoryStore) Append(_ context.Context, event observation.ValidatedEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
