@@ -3,7 +3,7 @@ chrome.storage.local.get("lastCapturePoc").then(({ lastCapturePoc }) => {
   const shot = document.getElementById("shot");
 
   if (!lastCapturePoc) {
-    meta.textContent = "No capture result found. Click the extension action on a test page first.";
+    meta.textContent = "No capture result found. Run the PoC from its permission-explanation popup first.";
     return;
   }
 
@@ -13,9 +13,15 @@ chrome.storage.local.get("lastCapturePoc").then(({ lastCapturePoc }) => {
   if (screenshot) {
     const img = document.createElement("img");
     img.src = screenshot;
-    img.alt = "Captured active-tab viewport";
+    img.alt = "Captured active-tab viewport after in-extension redaction";
     shot.appendChild(img);
-  } else {
-    shot.textContent = `No screenshot: ${lastCapturePoc.captureError || "unknown error"}`;
+    return;
   }
+
+  if (lastCapturePoc.screenshotInfo?.discardedUnredacted) {
+    shot.textContent = "Screenshot capture succeeded, but DOM-safe redaction was unavailable. The unredacted pixels were inspected only for dimensions and discarded without persistence.";
+    return;
+  }
+
+  shot.textContent = `No screenshot: ${lastCapturePoc.captureError || "capture produced no persisted image"}`;
 });
