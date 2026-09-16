@@ -19,11 +19,11 @@ type testJSONCodec struct {
 
 func (c testJSONCodec) ID() string { return c.id }
 
-func (c testJSONCodec) Encode(event observation.ValidatedEvent) ([]byte, error) {
+func (c testJSONCodec) Encode(_ context.Context, event observation.ValidatedEvent) ([]byte, error) {
 	return json.Marshal(event)
 }
 
-func (c testJSONCodec) Decode(record []byte) (observation.ValidatedEvent, error) {
+func (c testJSONCodec) Decode(_ context.Context, record []byte) (observation.ValidatedEvent, error) {
 	return observation.DecodeAndValidate(record)
 }
 
