@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Golden ordinary scroll</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 32px auto; line-height: 1.6; }
+  .spacer { height: 1100px; }
+</style>
+<h1>Golden ordinary scroll</h1>
+<p id="top" data-golden-id="top">Top observation: CurioTrace should record this paragraph when it is in the viewport.</p>
+<div class="spacer"></div>
+<p id="lower" data-golden-id="lower">Lower observation: scrolling here should end the first top exposure and create a distinct visible content unit.</p>
+<div class="spacer"></div>
+<p data-golden-id="tail">Tail text exists only to keep the page scrollable.</p>
+<p data-golden-id="hidden-never-visible" style="display:none">This hidden unit must never be treated as visible observation evidence.</p>
