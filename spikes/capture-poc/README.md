@@ -6,13 +6,15 @@ Disposable WebExtension harness for issue #8. It is intentionally not product co
 
 On extension-action click:
 
-1. requests the broad HTTP/HTTPS host permission if it has not already been granted, emulating CurioTrace's possible first-`Start` onboarding flow;
-2. dynamically injects the top-frame probe where the browser allows it;
-3. asks the probe for visible DOM text and sensitive/editable geometry;
-4. overlays magenta masks on editable controls and iframe rectangles;
-5. calls `tabs.captureVisibleTab()`;
-6. removes the masks;
-7. opens an extension result page showing permission/injection state, screenshot, DOM report, capture errors, and timing.
+1. shows a CurioTrace explanation of why cross-site website access is needed;
+2. only after the user explicitly continues, requests broad HTTP/HTTPS host permission if it has not already been granted;
+3. if the permission is denied, stops immediately without DOM observation or screenshot capture;
+4. dynamically injects the top-frame probe where the browser allows it;
+5. asks the probe for visible DOM text and sensitive/editable geometry;
+6. overlays magenta masks on editable controls and iframe rectangles;
+7. calls `tabs.captureVisibleTab()`;
+8. removes the masks;
+9. opens an extension result page showing permission/injection state, screenshot, DOM report, capture errors, and timing.
 
 The harness deliberately keeps host permission, DOM injection, and screenshot success/failure separate so restricted surfaces can be compared correctly.
 
@@ -23,10 +25,12 @@ The extension manifest uses `optional_host_permissions` instead of requiring `<a
 This lets the spike test the intended product distinction:
 
 - installing CurioTrace does not itself authorize observation of every site;
-- the first explicit recording action may explain and request the host access needed for zero-friction cross-site session tracking;
-- once granted, CurioTrace's own `IDLE` / `RECORDING` / `PAUSED` state remains the stricter capture authorization boundary.
+- the first explicit recording action first explains why broad host access is necessary for a complete cross-site session;
+- only after that explanation does CurioTrace trigger the browser's permission request;
+- once granted, CurioTrace's own `IDLE` / `RECORDING` / `PAUSED` state remains the stricter capture authorization boundary;
+- if the required broad host request is denied, CurioTrace does **not** start a partial recording.
 
-If the broad host request is denied, the user-gesture-derived `activeTab` grant may still let the PoC test the current ordinary tab, but that is not sufficient for unattended continuous tracking across arbitrary future tabs/origins.
+The explanation should make clear that broad host capability is required because a recorded session may navigate across unrelated sites and tabs. It should also make clear what the permission does **not** mean: installation alone does not start capture, excluded/private pages remain outside the intended capture scope, and website-access permission is not consent to transmit browsing contents to an external model.
 
 ## Load
 
@@ -52,7 +56,14 @@ Open:
 
 `http://127.0.0.1:8765/index.html`
 
-Then click the extension action. On the first run, record the runtime host-permission prompt and whether it was granted.
+Then click the extension action. On the first run, verify the sequence:
+
+1. CurioTrace explanation;
+2. explicit Continue action;
+3. browser host-permission prompt;
+4. capture only if permission is granted.
+
+Also test denial: after rejecting the browser permission prompt, verify that no capture result is produced and the popup reports that recording did not start.
 
 ## Expected ordinary-page observations
 
@@ -97,15 +108,16 @@ The important property is that screenshot eligibility must not be inferred from 
 
 With the PoC loaded:
 
-1. note the first-click host-permission prompt;
-2. capture one origin;
+1. note the first-click explanatory popup and host-permission prompt;
+2. grant access and capture one origin;
 3. navigate the same tab to another origin;
 4. open another tab/origin;
 5. capture again;
 6. record whether the permission persists and whether DOM/screenshot behavior changes;
-7. revoke the host permission in the browser's extension settings and repeat.
+7. revoke the host permission in the browser's extension settings and repeat;
+8. explicitly deny the next request and verify that capture does not begin.
 
-This tests whether a one-time explicit permission grant can support zero-friction recording while CurioTrace's own Start/Pause/Stop state controls actual capture.
+This tests whether a one-time explained permission grant can support zero-friction recording while CurioTrace's own Start/Pause/Stop state controls actual capture.
 
 ## Scroll / rate test
 
