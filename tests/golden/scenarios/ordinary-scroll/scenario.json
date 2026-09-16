@@ -1,0 +1,35 @@
+{
+  "id": "ordinary-scroll",
+  "version": 1,
+  "description": "Observe the top paragraph, scroll away to a distinct lower paragraph, then return to the top without leaving the page.",
+  "decision_refs": ["#7", "#8", "docs/EVALUATION.md"],
+  "steps": [
+    { "action": "start" },
+    { "action": "navigate", "target": "fixture/index.html" },
+    { "action": "wait", "seconds": 2 },
+    { "action": "scroll_to", "target": "lower" },
+    { "action": "wait", "seconds": 2 },
+    { "action": "scroll_to", "target": "top" },
+    { "action": "wait", "seconds": 2 },
+    { "action": "stop" }
+  ],
+  "expectations": {
+    "must_observe": [
+      { "content_id": "top", "source_id": "article", "material_weight": 1 },
+      { "content_id": "lower", "source_id": "article", "material_weight": 1 }
+    ],
+    "must_not_observe": [
+      { "content_id": "hidden-never-visible", "source_id": "article", "notes": "display:none fixture content must never be treated as observed" }
+    ],
+    "privacy_forbidden_canaries": [],
+    "expected_redisplays": [
+      { "content_id": "top", "count": 1 }
+    ],
+    "expected_revisits": [
+      { "content_id": "top", "count": 0 }
+    ],
+    "expected_sources": [
+      { "source_id": "article", "url_suffix": "/fixture/index.html", "title": "Golden ordinary scroll" }
+    ]
+  }
+}
