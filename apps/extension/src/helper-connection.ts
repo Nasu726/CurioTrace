@@ -41,6 +41,9 @@ export class HelperConnectionController implements ControlTransport {
     if (hostName.length === 0) {
       throw new Error("native host name is required");
     }
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new RangeError("timeoutMs must be positive");
+    }
     this.#runtime = runtime;
     this.#hostName = hostName;
     this.protocol = protocol;
