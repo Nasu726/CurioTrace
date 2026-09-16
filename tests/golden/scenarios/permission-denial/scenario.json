@@ -1,0 +1,26 @@
+{
+  "id": "permission-denial",
+  "version": 1,
+  "description": "Declining the required cross-site host permission must leave CurioTrace out of RECORDING and create no partial browsing session.",
+  "decision_refs": ["#8", "#26", "docs/PERMISSION_ONBOARDING.md", "docs/EVALUATION.md"],
+  "steps": [
+    { "action": "start", "notes": "Invoke the first-Start onboarding flow." },
+    { "action": "deny_permission", "notes": "Decline/cancel the browser host-permission prompt." },
+    { "action": "navigate", "target": "https://example.test/after-denial", "notes": "Normal browsing continues outside CurioTrace." },
+    { "action": "wait", "seconds": 1 }
+  ],
+  "expectations": {
+    "must_observe": [],
+    "must_not_observe": [
+      { "content_id": "any-page-content", "notes": "No content observation may be created because recording never started." }
+    ],
+    "privacy_forbidden_canaries": [],
+    "expected_final_state": "IDLE",
+    "recording_must_not_start": true,
+    "hard_gates": [
+      "no session is represented as RECORDING",
+      "no browsing-content capture occurs after permission refusal",
+      "no partial session artifact is created as if recording had succeeded"
+    ]
+  }
+}
