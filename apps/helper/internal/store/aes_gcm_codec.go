@@ -42,6 +42,19 @@ func NewAESGCMCodec(keys KeyProvider) (*AESGCMCodec, error) {
 
 func (c *AESGCMCodec) ID() string { return aesGCMCodecID }
 
+func (c *AESGCMCodec) Ready(ctx context.Context) error {
+	material, err := c.keys.CurrentKey(ctx)
+	if err != nil {
+		return fmt.Errorf("load current durable-record key: %w", err)
+	}
+	defer clear(material.Key)
+	if err := validateKeyMaterial(material, material.ID); err != nil {
+		return err
+	}
+	_, err = newAESGCM(material.Key)
+	return err
+}
+
 func (c *AESGCMCodec) Encode(ctx context.Context, event observation.ValidatedEvent) ([]byte, error) {
 	material, err := c.keys.CurrentKey(ctx)
 	if err != nil {
