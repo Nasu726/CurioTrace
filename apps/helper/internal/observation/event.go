@@ -1,8 +1,6 @@
 package observation
 
-import (
-	"encoding/json"
-)
+import "encoding/json"
 
 const (
 	SchemaVersion = "1.0"
@@ -28,6 +26,24 @@ type Event struct {
 	CaptureMode       string         `json:"capture_mode,omitempty"`
 	Source            *Source        `json:"source,omitempty"`
 	Payload           map[string]any `json:"payload"`
+}
+
+type ValidatedEvent struct {
+	event Event
+}
+
+func (v ValidatedEvent) EventID() string        { return v.event.EventID }
+func (v ValidatedEvent) SessionID() string      { return v.event.SessionID }
+func (v ValidatedEvent) RecordingEpoch() uint64 { return v.event.RecordingEpoch }
+func (v ValidatedEvent) EventType() string      { return v.event.EventType }
+
+// MarshalJSON exposes only the validated snapshot.
+func (v ValidatedEvent) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.event)
+}
+
+func (v ValidatedEvent) snapshot() Event {
+	return v.event
 }
 
 type SubmitPayload struct {
