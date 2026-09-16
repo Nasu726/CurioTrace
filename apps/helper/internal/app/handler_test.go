@@ -10,7 +10,8 @@ import (
 )
 
 func TestHandshakeAndLifecycle(t *testing.T) {
-	h := NewHandler()
+	memory := store.NewMemoryStore()
+	h := NewHandlerWithStore(memory)
 	hello := h.Handle(protocol.Envelope{ProtocolVersion: protocol.Version, MessageID: "h", Kind: "hello"})
 	if hello.Kind != "hello.ack" {
 		t.Fatalf("unexpected hello response: %+v", hello)
@@ -139,23 +140,18 @@ func TestStateEventsRemainHelperAuthoritative(t *testing.T) {
 	}
 }
 
-func TestDefaultHandlerDoesNotPretendToPersist(t *testing.T) {
+func TestDefaultHandlerRefusesStartWithoutStore(t *testing.T) {
 	h := NewHandler()
-	sessionID, epoch := startSession(t, h)
-	response := h.Handle(observationMessage(t, sessionID, epoch, map[string]any{
-		"schema_version":  "1.0",
-		"event_id":        "evt_1",
-		"session_id":      sessionID,
-		"recording_epoch": epoch,
-		"event_type":      "content_observation",
-		"wall_time":       "2026-09-16T00:00:00Z",
-		"monotonic_ms":    10,
-		"capture_mode":    "metadata_only",
-		"payload":         map[string]any{"reason": "test"},
-	}))
-	result := payloadMap(t, response)
+	start := h.Handle(protocol.Envelope{ProtocolVersion: protocol.Version, Kind: "session.start"})
+	result := payloadMap(t, start)
 	if result["accepted"] != false || result["reason"] != "STORE_NOT_CONFIGURED" {
-		t.Fatalf("default helper pretended to persist observation: %#v", result)
+		t.Fatalf("helper without durable store unexpectedly started recording: %#v", result)
+	}
+
+	hello := h.Handle(protocol.Envelope{ProtocolVersion: protocol.Version, Kind: "hello"})
+	helloPayload := payloadMap(t, hello)
+	if helloPayload["session_state"] != "IDLE" {
+		t.Fatalf("rejected start mutated helper state: %#v", helloPayload)
 	}
 }
 
