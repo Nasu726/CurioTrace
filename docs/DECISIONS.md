@@ -144,6 +144,22 @@ Do not force a platform packaging model solely to obtain one OCR API. Platform-n
 
 Linux support is defined by documented tested environments plus best-effort compatibility elsewhere, not a promise for every distribution/package manager. MCP capability semantics remain common across OSes even if local transport/launch details differ.
 
+## 2026-09-16 — D012: Capture authority is explicit and fail-closed
+
+Sources: #23, #24, #26; validated by the M1 reference harness and CI.
+
+Capture permission is not inferred from process presence, browser host permission, or a previous recording state. Every asynchronous content acquisition belongs to a specific current recording authority. Conceptually that authority includes the active session identity, a monotonically changing recording epoch/generation, and the current trusted transport/connection generation where applicable.
+
+- `Start` does not become `RECORDING` until the authoritative session controller confirms the new session/epoch.
+- A Pause/Stop request locally suspends new capture immediately, before its control round trip completes.
+- Pause, Stop, Interrupted, helper/process loss, incompatible protocol state, or transport reconnection invalidates in-flight capture authority.
+- A late asynchronous capture result is discarded before observation materialization/persistence when its authority token is stale.
+- Reconnection never restores previous recording authority implicitly, even if session/epoch-looking values happen to repeat; a fresh authoritative handshake/state is required.
+- Restart recovery must not silently resume `RECORDING`; an unfinished active/paused session is restored as `INTERRUPTED` with old capture authority invalidated.
+- If authority is uncertain, CurioTrace fails closed rather than buffering raw page content for later acceptance.
+
+These are product correctness/privacy invariants. The concrete transport, programming language, and internal token representation remain implementation details.
+
 ## Pending architecture decision
 
 #8 will empirically compare capture architectures (DOM/viewport extraction, screenshot + local OCR, hybrid approaches, browser extension + native helper, etc.) against real web surfaces, privacy constraints, browser portability, fidelity, copyright/source-retention requirements, desktop-platform portability, and resource cost.
