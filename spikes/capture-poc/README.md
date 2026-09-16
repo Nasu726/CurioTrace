@@ -11,12 +11,12 @@ On extension-action click:
 3. if the permission is denied, stops immediately without DOM observation or screenshot capture;
 4. dynamically injects the top-frame probe where the browser allows it;
 5. asks the probe for visible DOM text and sensitive/editable geometry;
-6. overlays magenta masks on editable controls and iframe rectangles;
-7. calls `tabs.captureVisibleTab()`;
-8. removes the masks;
-9. opens an extension result page showing permission/injection state, screenshot, DOM report, capture errors, and timing.
+6. calls `tabs.captureVisibleTab()`;
+7. if DOM-safe geometry exists, redacts the raw screenshot **inside the extension process** using `OffscreenCanvas` before persistence;
+8. if DOM-safe geometry is unavailable, records capture success/dimensions only and discards the unredacted screenshot without persistence;
+9. opens an extension result page showing permission/injection state, redaction state, DOM report, capture errors, and timing.
 
-The harness deliberately keeps host permission, DOM injection, and screenshot success/failure separate so restricted surfaces can be compared correctly.
+The harness deliberately keeps host permission, DOM injection, screenshot acquisition, and redaction success/failure separate so restricted surfaces can be compared correctly.
 
 ## Why runtime host permission is part of the spike
 
@@ -69,27 +69,28 @@ Also test denial: after rejecting the browser permission prompt, verify that no 
 
 The result should make these distinctions visible:
 
-- ordinary visible paragraph: present in DOM report and screenshot;
-- input/password/contenteditable regions: magenta-masked before screenshot;
-- iframe rectangles: conservatively magenta-masked by this top-frame PoC;
+- ordinary visible paragraph: present in DOM report and persisted redacted screenshot;
+- input/password/contenteditable rectangles: magenta-redacted **in the captured image**, without flashing overlays into the live page;
+- iframe rectangles: conservatively magenta-redacted by this top-frame PoC;
 - `API_KEY_EXAMPLE_123`: still visible, demonstrating that arbitrary confidential-looking page text cannot be reliably classified as secret;
 - canvas text: visible in screenshot but absent from ordinary DOM text extraction;
 - form values should not appear in the DOM text report.
 
-This harness masks all iframes on purpose. Later variants can test per-frame injection and selective masking.
+This harness redacts all iframe rectangles on purpose. Later variants can test per-frame injection and selective masking.
 
-### Important: the magenta overlay is not the preferred production UX
+### In-extension redaction boundary
 
-The overlay exists to prove that DOM-derived geometry can protect known sensitive/editable regions before OCR/persistence. A real product should avoid visibly flashing masks into the user's page if possible.
-
-A stronger production candidate is:
+The current safer candidate is:
 
 1. collect trusted mask rectangles from the page;
 2. capture the active-tab viewport transiently;
-3. immediately redact the raster inside CurioTrace's trusted local pipeline before OCR, durable persistence, or any external transfer;
-4. discard the unredacted raster.
+3. decode and redact the raster immediately inside the extension runtime using standard Canvas/`OffscreenCanvas` APIs;
+4. only then persist or send the redacted representation to the native helper;
+5. discard the unredacted raster.
 
-The native helper is part of CurioTrace's trusted local computing base, but unredacted pixels must still remain transient and must never enter logs or durable storage. Chrome permits messages up to 64 MiB from an extension to a native host; Firefox documents a much larger extension-to-host limit, so a viewport image is technically transportable, subject to empirical memory/latency tests.
+This narrows the trusted data path compared with sending raw pixels to the native helper for masking. The native helper may still perform OCR, storage, matching, and MCP-related work on the already-redacted image.
+
+The PoC stores a redacted screenshot in extension local storage only so the result page can display it. That is still PoC behavior, not the intended production retention policy.
 
 ## PDF / restricted-surface test
 
@@ -98,11 +99,13 @@ Open a non-sensitive PDF in the browser's built-in PDF viewer and click the exte
 Record separately:
 
 - whether dynamic content-script injection succeeds (`injection` / `domError`);
-- whether `captureVisibleTab()` succeeds (`captureError` / screenshot).
+- whether `captureVisibleTab()` succeeds (`captureError` / `screenshotInfo`).
+
+If DOM-safe geometry is unavailable, the PoC intentionally does **not** persist the screenshot. It records dimensions/capture success and discards the unredacted pixels. This models the current Tier-2 fingerprint-only direction.
 
 Repeat on a harmless browser-internal/restricted page if the browser permits the action. Do not use a page containing sensitive account data.
 
-The important property is that screenshot eligibility must not be inferred from DOM-injection eligibility. MDN explicitly documents that content scripts cannot run in the built-in PDF viewer and other privileged browser UI, while `captureVisibleTab()` can capture some otherwise restricted surfaces.
+The important property is that screenshot eligibility must not be inferred from DOM-injection eligibility. MDN documents that content scripts cannot run in the built-in PDF viewer and other privileged browser UI, while `captureVisibleTab()` can capture some otherwise restricted surfaces.
 
 ## Navigation / permissions test
 
@@ -129,15 +132,15 @@ The product should eventually schedule captures from navigation/scroll/resize/mu
 
 Fill this into issue #8 for each browser/surface:
 
-| Browser/surface | host permission | DOM works | sensitive geometry known | screenshot works | pre-mask works | capture ms | notes |
+| Browser/surface | host permission | DOM works | sensitive geometry known | screenshot works | in-extension redaction works | capture ms | notes |
 |---|---|---:|---:|---:|---:|---:|---|
 | Chrome ordinary HTML | | | | | | | |
 | Edge ordinary HTML | | | | | | | |
-| Chrome PDF viewer | n/a/restricted | | | | | | |
-| Edge PDF viewer | n/a/restricted | | | | | | |
+| Chrome PDF viewer | n/a/restricted | | | | n/a/fingerprint-only | | |
+| Edge PDF viewer | n/a/restricted | | | | n/a/fingerprint-only | | |
 | cross-origin iframe | | | | | | | |
 | canvas/image text | | | | | | | |
-| restricted browser page | n/a/restricted | | | | | | |
+| restricted browser page | n/a/restricted | | | | should be denied | | |
 | Firefox parity check | | | | | | | |
 
 ## References
@@ -149,8 +152,9 @@ Fill this into issue #8 for each browser/surface:
 - MDN `tabs.captureVisibleTab`: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabs/captureVisibleTab
 - MDN content scripts: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Content_scripts
 - MDN optional host permissions: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/optional_host_permissions
+- MDN `OffscreenCanvas`: https://developer.mozilla.org/en-US/docs/Web/API/OffscreenCanvas
 - MDN native messaging: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging
 
 ## Safety
 
-The PoC stores the last screenshot in extension local storage only so it can display the result page. This is **not** CurioTrace's intended screenshot-retention policy. Do not use the PoC on real sensitive pages. Remove the unpacked extension/profile after testing if desired.
+Do not use the PoC on real sensitive pages. On DOM-inspectable pages, only the redacted screenshot is persisted by the PoC. On DOM-unavailable surfaces, screenshot pixels are discarded without persistence after capture metadata is obtained. Remove the unpacked extension/profile after testing if desired.
