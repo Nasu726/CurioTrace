@@ -1,8 +1,9 @@
+const ext = globalThis.browser ?? chrome;
 const SESSION_HOSTS = ["http://*/*", "https://*/*"];
 
 async function injectContentScript(tabId) {
   try {
-    await chrome.scripting.executeScript({
+    await ext.scripting.executeScript({
       target: { tabId },
       files: ["content.js"]
     });
@@ -69,7 +70,7 @@ async function inspectAndDiscardScreenshot(rawDataUrl) {
 }
 
 async function runCapturePoc() {
-  const permissionGranted = await chrome.permissions.contains({ origins: SESSION_HOSTS });
+  const permissionGranted = await ext.permissions.contains({ origins: SESSION_HOSTS });
   if (!permissionGranted) {
     return {
       ok: false,
@@ -77,7 +78,7 @@ async function runCapturePoc() {
     };
   }
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) {
     return { ok: false, message: "No active tab is available for the capture test." };
   }
@@ -93,7 +94,7 @@ async function runCapturePoc() {
 
   if (injection.ok) {
     try {
-      report = await chrome.tabs.sendMessage(tab.id, { type: "REPORT" });
+      report = await ext.tabs.sendMessage(tab.id, { type: "REPORT" });
     } catch (error) {
       domError = String(error?.message || error);
     }
@@ -101,7 +102,7 @@ async function runCapturePoc() {
 
   const captureStartedAt = performance.now();
   try {
-    const rawScreenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+    const rawScreenshot = await ext.tabs.captureVisibleTab(tab.windowId, { format: "png" });
 
     if (report) {
       const redacted = await redactScreenshot(rawScreenshot, report);
@@ -122,7 +123,7 @@ async function runCapturePoc() {
   }
   const captureMs = performance.now() - captureStartedAt;
 
-  await chrome.storage.local.set({
+  await ext.storage.local.set({
     lastCapturePoc: {
       capturedAt: new Date().toISOString(),
       tab: { id: tab.id, url: tab.url, title: tab.title },
@@ -138,11 +139,11 @@ async function runCapturePoc() {
     }
   });
 
-  await chrome.tabs.create({ url: chrome.runtime.getURL("result.html") });
+  await ext.tabs.create({ url: ext.runtime.getURL("result.html") });
   return { ok: true };
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+ext.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "RUN_CAPTURE_POC") return;
 
   runCapturePoc()
