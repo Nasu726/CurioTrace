@@ -76,7 +76,40 @@ It is not selected for M1 because CurioTrace's current risks are protocol correc
 
 Reconsider Rust if later evidence shows that image/OCR pipelines, zero-copy sensitive buffers, platform APIs, or memory-control requirements materially benefit from it.
 
-## 6. Shared contract strategy
+## 6. M1 durable event storage: per-session framed log
+
+Baseline:
+
+- one append-only durable event log per CurioTrace session;
+- hashed session filename rather than raw session ID;
+- bounded length-prefixed frames plus CRC32C accidental-corruption detection;
+- `Sync` after successful append;
+- automatic repair only for an incomplete final frame at EOF;
+- corruption, codec mismatch, session mismatch, or conflicting event IDs fail closed;
+- `Store.Append` accepts only `ValidatedEvent`;
+- session deletion removes the managed session-log file;
+- record bytes are supplied by a replaceable `RecordCodec`.
+
+Why this baseline instead of introducing SQLite immediately:
+
+- the product's durable unit is one browsing session;
+- M2 reconstruction, M3 inspection, and M5 export all consume a session event stream;
+- cross-session knowledge querying is intentionally delegated to downstream systems such as LLM Wiki;
+- per-session files make application-level physical session deletion direct;
+- the helper stays dependency-free at this layer.
+
+This is not a permanent prohibition on SQLite or another storage engine. Migrate if later measurements or product requirements justify indexes, larger-scale queries, or transactional metadata that the session-log model cannot provide cleanly.
+
+Security boundary:
+
+- CRC32C is not cryptographic authentication;
+- the file-store layer does not itself claim confidentiality;
+- normal recording must not use a plaintext testing codec;
+- a production authenticated-encryption codec and platform-appropriate key provider are required before this backend is wired into ordinary recording.
+
+Detailed format/recovery semantics are in `docs/DURABLE_STORAGE.md`.
+
+## 7. Shared contract strategy
 
 Do not directly share implementation source between TypeScript and Go. Share semantics through versioned machine-readable schemas and conformance fixtures:
 
@@ -87,7 +120,7 @@ Do not directly share implementation source between TypeScript and Go. Share sem
 
 This prevents one runtime from silently becoming the definition of the protocol.
 
-## 7. CI strategy
+## 8. CI strategy
 
 Independent work runs in parallel where possible:
 
@@ -99,12 +132,13 @@ Independent work runs in parallel where possible:
 
 Browser integration jobs are added separately once #8 can run in a suitable environment.
 
-## 8. Deferred implementation choices
+## 9. Deferred implementation choices
 
 Still deliberately open:
 
 - TypeScript bundler/build packager;
-- concrete Go durable database/encryption library;
+- authenticated-encryption `RecordCodec` and OS key-provider implementation;
+- application-private data-root discovery/installer integration per OS;
 - native-host installer/updater;
 - platform OCR adapters;
 - browser compatibility abstraction/polyfill;

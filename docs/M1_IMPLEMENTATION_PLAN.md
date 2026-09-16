@@ -140,9 +140,11 @@ Helper-side validation responsibilities:
 - enforce capture-mode-specific payload restrictions;
 - create a `ValidatedEvent` only after validation succeeds.
 
-Production helper baseline is being implemented under:
+Production helper baseline:
 
 - `apps/helper/internal/observation/`
+
+The production validator and `ValidatedEvent` boundary are implemented and CI-tested. Store APIs accept the validated wrapper instead of raw protocol data.
 
 Normative references:
 
@@ -163,7 +165,8 @@ Responsibilities:
 Production baseline:
 
 - Go helper under `apps/helper/`;
-- stdlib Native Messaging framing and session authority are implemented and CI-tested.
+- stdlib Native Messaging framing and session authority are implemented and CI-tested;
+- Start fails closed when a usable durable store is not configured.
 
 Independent reference oracle:
 
@@ -187,15 +190,25 @@ Current production boundary:
 
 - `Store.Append` accepts `ValidatedEvent`, not raw protocol payloads;
 - an in-memory store exists only for tests/conformance;
-- the default helper fails closed rather than pretending to persist when no durable backend is configured.
+- `FileStore` is the current dependency-free M1 durable-backend candidate;
+- `FileStore` uses one hashed-name append-only log per session with codec binding, bounded frames, CRC32C corruption detection, `Sync`, idempotent event IDs, partial-tail crash repair, and physical managed-file deletion;
+- arbitrary corruption/codec mismatch/session mismatch fails closed rather than being silently repaired;
+- record confidentiality/authentication is deliberately separated behind `RecordCodec`;
+- the default helper remains unable to Start normal recording until a production-safe durable store/codec is configured.
+
+Normative implementation note:
+
+- `docs/DURABLE_STORAGE.md`
 
 Still pending:
 
-- concrete application-private durable database;
-- encryption/key-management implementation;
-- restart/recovery integration with that production store.
+- authenticated-encryption production `RecordCodec`;
+- platform-appropriate key/secret provider;
+- application-private root-directory discovery/installation per OS;
+- durable helper-authoritative session state;
+- restart conversion of unfinished `RECORDING` / `PAUSED` state to `INTERRUPTED` with a fresh epoch.
 
-The concrete database/encryption library must preserve the product's encryption/storage-protection commitments.
+Do not wire a plaintext testing codec into normal recording merely to make the file backend usable.
 
 ### I. Minimal session inspector
 
@@ -220,6 +233,8 @@ User presses Start
   |                                                      +--> browser request denied -> remain IDLE
   |
   +-- native helper available and protocol compatible? -- no --> setup/repair; remain IDLE
+  |
+  +-- production-safe durable store/key path ready? ----- no --> setup/repair; remain IDLE
   |
   +-- helper session.start -> helper returns session_id + epoch + RECORDING
   |
@@ -272,11 +287,14 @@ Native message
   -> observation shape/schema validation
   -> privacy semantic validation
   -> ValidatedEvent
-  -> bounded durable-store append
+  -> production RecordCodec
+  -> bounded durable session-log append + Sync
   -> small acknowledgement
 ```
 
 Do not write the payload to debug logs before validation. Store APIs should accept the validated type rather than raw transport data so validation cannot be accidentally skipped by ordinary call sites.
+
+A checksum is only an accidental-corruption signal. Cryptographic confidentiality/integrity belongs to the production authenticated-encryption codec and key provider.
 
 ## 7. Testing layers
 
@@ -289,6 +307,8 @@ Independent cheap jobs run in parallel:
 - Go production-helper format/test/build checks;
 - TypeScript production-extension build/conformance tests;
 - JSON schema syntax/shape validation.
+
+The Go production-helper job includes durable-store tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, session deletion, and POSIX access modes where applicable.
 
 As production modules are added, their tests join the appropriate production job rather than replacing the independent reference oracles.
 
@@ -313,8 +333,8 @@ See `docs/EVALUATION.md`.
 1. **Protocol/schema/reference invariants** — completed baseline.
 2. **Extension capture-authority guard** — completed reference and production-state-machine baseline.
 3. **Native protocol client abstraction** — completed browser-independent production baseline.
-4. **Observation validation + store interface** — active; production helper implementation and tests are in progress, durable backend intentionally not selected here.
-5. **M1 session authority/storage helper** — session authority/protocol skeleton completed; production durable backend/restart integration pending.
+4. **Observation validation + store interface** — completed production baseline.
+5. **M1 durable event storage** — per-session framed `FileStore` candidate implemented/tested; production authenticated codec/key provider and restart state integration remain active work.
 6. **Extension UI + permission flow** — wire fixed onboarding semantics.
 7. **Browser event collector** — navigation/visibility first.
 8. **Capture adapter** — integrate #8 findings; normal HTML first.
@@ -331,6 +351,8 @@ Do not claim M1 complete if any of the following remains true:
 - unredacted raster crosses the extension -> helper boundary on the normal semantic path;
 - blocked/private/editable canaries reach durable data;
 - unvalidated protocol data can reach the durable store through an ordinary production API;
+- normal recording can start with a plaintext/testing durable codec;
+- unfinished session state can silently recover as `RECORDING` after helper/OS restart;
 - browser restart/recovery semantics contradict the product lifecycle;
 - #8 empirical tests contradict the selected capture adapter behavior;
 - a session cannot be inspected without an LLM/network connection.
@@ -340,12 +362,12 @@ Do not claim M1 complete if any of the following remains true:
 M1 planning does not yet fix:
 
 - frontend framework (if any);
-- production database/encryption library;
+- production authenticated-encryption/key-storage adapter implementation;
 - OCR engine mix;
 - installer/update framework;
 - final UI visual design;
 - final capture debounce constants.
 
-The current TypeScript extension + Go helper baseline is documented in `docs/IMPLEMENTATION_STACK.md`; changing that engineering baseline does not alter the product contract.
+The current TypeScript extension + Go helper baseline is documented in `docs/IMPLEMENTATION_STACK.md`; changing that engineering baseline does not alter the product contract. The current per-session durable-log format is likewise an implementation baseline and may be migrated later without changing the product's observation/privacy semantics.
 
 Deferred choices should be made from evidence/maintenance needs, not accidentally encoded into product semantics.
