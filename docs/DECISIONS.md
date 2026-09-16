@@ -130,8 +130,22 @@ Post-Stop summarization uses explicit states such as `PENDING_SUMMARY -> GENERAT
 
 Runtime validation performs deterministic schema/source/provenance/coverage checks before deletion. Semantic-quality thresholds are evaluated through golden sessions and representative frontier models rather than requiring a second heavyweight verifier on every run.
 
+## 2026-09-16 — D011: Windows/macOS/Linux target with a required native helper
+
+Source: #21
+
+CurioTrace's eventual desktop targets are Windows, macOS, and Linux. M1 does not require polished simultaneous distribution on all three, but #8 must select an architecture that has a viable path to all three before a stable public release.
+
+If the hybrid architecture is confirmed, the native helper is part of the normal full product rather than an optional optimization. It owns private persistence/cleanup, OCR/image-processing adaptation, cross-browser session coordination where needed, and the MCP summarization boundary.
+
+If the helper is missing, incompatible, or unreachable, CurioTrace does not silently begin a partial recording with weaker guarantees. The extension may provide setup/repair diagnostics; a future extension-only degraded mode requires its own explicit contract.
+
+Do not force a platform packaging model solely to obtain one OCR API. Platform-native OCR/keychain/storage may sit behind adapters, with maintained fallbacks where specialization would otherwise fragment distribution or semantics.
+
+Linux support is defined by documented tested environments plus best-effort compatibility elsewhere, not a promise for every distribution/package manager. MCP capability semantics remain common across OSes even if local transport/launch details differ.
+
 ## Pending architecture decision
 
-#8 will empirically compare capture architectures (DOM/viewport extraction, screenshot + local OCR, hybrid approaches, browser extension + native helper, etc.) against real web surfaces, privacy constraints, browser portability, fidelity, copyright/source-retention requirements, and resource cost.
+#8 will empirically compare capture architectures (DOM/viewport extraction, screenshot + local OCR, hybrid approaches, browser extension + native helper, etc.) against real web surfaces, privacy constraints, browser portability, fidelity, copyright/source-retention requirements, desktop-platform portability, and resource cost.
 
 Until #8 is resolved, these mechanisms remain candidates rather than product requirements.
