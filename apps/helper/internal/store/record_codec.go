@@ -15,6 +15,7 @@ import (
 // material from platform services that can block or be cancelled.
 type RecordCodec interface {
 	ID() string
+	Ready(ctx context.Context) error
 	Encode(ctx context.Context, event observation.ValidatedEvent) ([]byte, error)
 	Decode(ctx context.Context, record []byte) (observation.ValidatedEvent, error)
 }
