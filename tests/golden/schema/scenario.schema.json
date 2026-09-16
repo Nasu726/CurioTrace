@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://curiotrace.local/schema/golden-scenario.json",
+  "title": "CurioTrace Golden Session Scenario",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "description", "steps", "expectations"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "decision_refs": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action"],
+        "properties": {
+          "action": {
+            "enum": ["start", "navigate", "scroll_to", "wait", "select", "copy", "switch_tab", "pause", "resume", "stop"]
+          },
+          "target": { "type": "string" },
+          "seconds": { "type": "number", "minimum": 0 },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "expectations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["must_observe", "must_not_observe", "privacy_forbidden_canaries"],
+      "properties": {
+        "must_observe": { "type": "array", "items": { "$ref": "#/$defs/contentExpectation" } },
+        "must_not_observe": { "type": "array", "items": { "$ref": "#/$defs/contentExpectation" } },
+        "privacy_forbidden_canaries": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "expected_redisplays": { "type": "array", "items": { "$ref": "#/$defs/countExpectation" } },
+        "expected_revisits": { "type": "array", "items": { "$ref": "#/$defs/countExpectation" } },
+        "expected_sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_id", "url_suffix"],
+            "properties": {
+              "source_id": { "type": "string" },
+              "url_suffix": { "type": "string" },
+              "title": { "type": "string" }
+            }
+          }
+        },
+        "hard_gates": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    }
+  },
+  "$defs": {
+    "contentExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_id"],
+      "properties": {
+        "content_id": { "type": "string", "minLength": 1 },
+        "source_id": { "type": "string" },
+        "material_weight": { "type": "number", "minimum": 0 },
+        "notes": { "type": "string" }
+      }
+    },
+    "countExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_id", "count"],
+      "properties": {
+        "content_id": { "type": "string" },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
