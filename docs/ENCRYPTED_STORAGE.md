@@ -33,12 +33,12 @@ A production provider must:
 
 OS-specific key-storage adapters are a separate implementation step. Until a production provider is configured, normal recording must remain unavailable rather than falling back to plaintext durable storage.
 
-## Start readiness gate
+## Recording readiness gate
 
-A configured store is not sufficient evidence that recording can safely begin. Before helper authority enters `RECORDING`, the helper calls the durable store readiness path:
+A configured store is not sufficient evidence that recording can safely begin or resume. Before helper authority enters `RECORDING`, both `session.start` and `session.resume` call the durable-store readiness path:
 
 ```text
-session.start
+Start / Resume
   -> Store.Ready
   -> FileStore.Ready
   -> RecordCodec.Ready
@@ -46,9 +46,9 @@ session.start
   -> validate current AES-256 key material
 ```
 
-Any failure rejects Start with the helper remaining `IDLE`. This prevents a known-unavailable key service or malformed current key from creating a session that can capture observations but cannot persist them.
+Any failure rejects the transition without advancing helper capture authority. A failed Start remains `IDLE`; a failed Resume remains in its previous non-recording state such as `PAUSED` or `INTERRUPTED`.
 
-Readiness is a preflight, not a promise that I/O can never fail later. Mid-session storage/key failures must still fail closed and are handled as runtime persistence failures rather than silently falling back to plaintext.
+Readiness is a preflight, not a promise that I/O can never fail later. If a validated observation reaches the durable append step and persistence fails, the helper immediately transitions the active session to `INTERRUPTED`, increments the recording epoch, and rejects the observation. Subsequent observations using the old authority are rejected. CurioTrace never falls back to plaintext storage.
 
 ## Rotation
 
