@@ -18,16 +18,17 @@ const (
 )
 
 var (
-	ErrSecretNotFound       = errors.New("secure secret not found")
-	ErrSystemKeyState       = errors.New("invalid system key state")
-	ErrSystemKeyProvision   = errors.New("system key provisioning failed")
-	ErrInvalidSystemKeyID   = errors.New("invalid system key id")
-	ErrSecureStoreRequired  = errors.New("secure secret store required")
+	ErrSecretNotFound      = errors.New("secure secret not found")
+	ErrSystemKeyState      = errors.New("invalid system key state")
+	ErrSystemKeyProvision  = errors.New("system key provisioning failed")
+	ErrInvalidSystemKeyID  = errors.New("invalid system key id")
+	ErrSecureStoreRequired = errors.New("secure secret store required")
 )
 
 // secureSecretStore is the narrow boundary implemented by OS-specific secure
 // credential-store adapters. Implementations must not silently fall back to a
-// plaintext/application file store.
+// plaintext/application file store. Get returns a caller-owned slice. Set must
+// synchronously persist/copy the supplied bytes and must not retain the slice.
 type secureSecretStore interface {
 	Get(key string) ([]byte, error)
 	Set(key string, value []byte) error
@@ -83,14 +84,27 @@ func (p *SystemKeyProvider) KeyByID(ctx context.Context, keyID string) (KeyMater
 }
 
 // Rotate creates and activates a new key while retaining historical key items.
-// Rotation is explicit; CurioTrace never rotates by deleting a key still needed
-// to decrypt retained session records.
+// Existing current-key state must be internally consistent before rotation; an
+// explicit rotation request must not silently overwrite evidence of key loss.
 func (p *SystemKeyProvider) Rotate(ctx context.Context) (KeyMaterial, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := contextError(ctx); err != nil {
 		return KeyMaterial{}, err
 	}
+
+	currentID, err := p.loadCurrentKeyID()
+	if errors.Is(err, ErrSecretNotFound) {
+		return p.provisionLocked(ctx)
+	}
+	if err != nil {
+		return KeyMaterial{}, fmt.Errorf("validate current system key before rotation: %w", err)
+	}
+	current, err := p.loadKeyLocked(ctx, currentID)
+	if err != nil {
+		return KeyMaterial{}, fmt.Errorf("validate current system key before rotation: %w", err)
+	}
+	clear(current.Key)
 	return p.provisionLocked(ctx)
 }
 
