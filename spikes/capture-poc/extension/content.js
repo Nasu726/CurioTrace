@@ -2,7 +2,7 @@
   if (globalThis.__curioTraceCapturePocInstalled) return;
   globalThis.__curioTraceCapturePocInstalled = true;
 
-  const MASK_ATTR = "data-curiotrace-poc-mask";
+  const ext = globalThis.browser ?? chrome;
 
   function isEditable(el) {
     return Boolean(
@@ -45,49 +45,16 @@
       .filter((r) => r.width > 0 && r.height > 0);
   }
 
-  function clearMasks() {
-    document.querySelectorAll(`[${MASK_ATTR}]`).forEach((el) => el.remove());
-  }
+  ext.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== "REPORT") return;
 
-  function applyMasks() {
-    clearMasks();
-    for (const rect of sensitiveRects()) {
-      const mask = document.createElement("div");
-      mask.setAttribute(MASK_ATTR, "true");
-      Object.assign(mask.style, {
-        position: "fixed",
-        left: `${rect.x}px`,
-        top: `${rect.y}px`,
-        width: `${rect.width}px`,
-        height: `${rect.height}px`,
-        zIndex: "2147483647",
-        background: "#ff00ff",
-        pointerEvents: "none"
-      });
-      document.documentElement.appendChild(mask);
-    }
-  }
-
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === "REPORT") {
-      sendResponse({
-        href: location.href,
-        title: document.title,
-        viewport: { width: innerWidth, height: innerHeight },
-        visibleText: visibleText(),
-        sensitiveRects: sensitiveRects(),
-        iframeCount: document.querySelectorAll("iframe").length
-      });
-      return;
-    }
-    if (message?.type === "APPLY_MASKS") {
-      applyMasks();
-      sendResponse({ ok: true });
-      return;
-    }
-    if (message?.type === "CLEAR_MASKS") {
-      clearMasks();
-      sendResponse({ ok: true });
-    }
+    sendResponse({
+      href: location.href,
+      title: document.title,
+      viewport: { width: innerWidth, height: innerHeight },
+      visibleText: visibleText(),
+      sensitiveRects: sensitiveRects(),
+      iframeCount: document.querySelectorAll("iframe").length
+    });
   });
 })();
