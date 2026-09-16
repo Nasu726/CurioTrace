@@ -94,18 +94,20 @@ var allowedModePayloadKeys = map[string]map[string]struct{}{
 	"failed":        setOf("reason", "error_code", "capture_method_version", "gap", "uncertainty"),
 }
 
-func DecodeAndValidate(raw json.RawMessage) (Event, error) {
-	var event Event
+func DecodeAndValidate(raw json.RawMessage) (ValidatedEvent, error) {
+	var zero ValidatedEvent
 	if len(raw) == 0 || len(raw) > MaxEventBytes {
-		return event, validationError("EVENT_TOO_LARGE_OR_EMPTY")
+		return zero, validationError("EVENT_TOO_LARGE_OR_EMPTY")
 	}
+
+	var event Event
 	if err := json.Unmarshal(raw, &event); err != nil {
-		return event, validationError("INVALID_JSON")
+		return zero, validationError("INVALID_JSON")
 	}
 	if err := Validate(event); err != nil {
-		return event, err
+		return zero, err
 	}
-	return event, nil
+	return ValidatedEvent{event: event}, nil
 }
 
 func Validate(event Event) error {
@@ -169,7 +171,6 @@ func Validate(event Event) error {
 				codes = append(codes, "UNEXPECTED_MODE_PAYLOAD_FIELD:"+key)
 			}
 		}
-	}
 
 	if event.CaptureMode == "blocked" {
 		if event.Source != nil {
