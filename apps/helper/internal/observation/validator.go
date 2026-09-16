@@ -1,10 +1,13 @@
 package observation
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"sort"
 	"strings"
 	"time"
 )
@@ -39,6 +42,32 @@ var captureModes = setOf(
 	"metadata_only",
 	"blocked",
 	"failed",
+)
+
+var requiredTopLevelFields = setOf(
+	"schema_version",
+	"event_id",
+	"session_id",
+	"recording_epoch",
+	"event_type",
+	"wall_time",
+	"monotonic_ms",
+	"payload",
+)
+
+var allowedTopLevelFields = setOf(
+	"schema_version",
+	"event_id",
+	"session_id",
+	"recording_epoch",
+	"event_type",
+	"wall_time",
+	"monotonic_ms",
+	"browser_instance_id",
+	"view_id",
+	"capture_mode",
+	"source",
+	"payload",
 )
 
 var forbiddenPayloadKeys = setOf(
@@ -94,18 +123,58 @@ var allowedModePayloadKeys = map[string]map[string]struct{}{
 	"failed":        setOf("reason", "error_code", "capture_method_version", "gap", "uncertainty"),
 }
 
-func DecodeAndValidate(raw json.RawMessage) (Event, error) {
-	var event Event
+func DecodeAndValidate(raw json.RawMessage) (ValidatedEvent, error) {
+	var zero ValidatedEvent
 	if len(raw) == 0 || len(raw) > MaxEventBytes {
-		return event, validationError("EVENT_TOO_LARGE_OR_EMPTY")
+		return zero, validationError("EVENT_TOO_LARGE_OR_EMPTY")
 	}
-	if err := json.Unmarshal(raw, &event); err != nil {
-		return event, validationError("INVALID_JSON")
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return zero, validationError("INVALID_JSON")
 	}
+
+	var shapeErrors []string
+	for field := range requiredTopLevelFields {
+		value, ok := fields[field]
+		if !ok {
+			shapeErrors = append(shapeErrors, "MISSING_FIELD:"+field)
+			continue
+		}
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			shapeErrors = append(shapeErrors, "NULL_REQUIRED_FIELD:"+field)
+		}
+	}
+	for field := range fields {
+		if _, ok := allowedTopLevelFields[field]; !ok {
+			shapeErrors = append(shapeErrors, "UNKNOWN_TOP_LEVEL_FIELD:"+field)
+		}
+	}
+	for _, optional := range []string{"browser_instance_id", "view_id", "capture_mode", "source"} {
+		if value, ok := fields[optional]; ok && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			shapeErrors = append(shapeErrors, "NULL_OPTIONAL_FIELD:"+optional)
+		}
+	}
+	if len(shapeErrors) > 0 {
+		sort.Strings(shapeErrors)
+		return zero, &ValidationError{Codes: deduplicate(shapeErrors)}
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var event Event
+	if err := decoder.Decode(&event); err != nil {
+		return zero, validationError("INVALID_SCHEMA")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return zero, validationError("TRAILING_JSON")
+	}
+
 	if err := Validate(event); err != nil {
-		return event, err
+		return zero, err
 	}
-	return event, nil
+	return ValidatedEvent{event: event}, nil
 }
 
 func Validate(event Event) error {
@@ -192,6 +261,7 @@ func Validate(event Event) error {
 	}
 
 	if len(codes) > 0 {
+		sort.Strings(codes)
 		return &ValidationError{Codes: deduplicate(codes)}
 	}
 	return nil

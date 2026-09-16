@@ -1,22 +1,31 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
+	"github.com/Nasu726/CurioTrace/apps/helper/internal/observation"
 	"github.com/Nasu726/CurioTrace/apps/helper/internal/protocol"
 	"github.com/Nasu726/CurioTrace/apps/helper/internal/session"
+	"github.com/Nasu726/CurioTrace/apps/helper/internal/store"
 )
 
 const helperVersion = "0.0.0-dev"
 
 type Handler struct {
 	authority *session.Authority
+	store     store.Store
 }
 
 func NewHandler() *Handler {
 	return &Handler{authority: session.NewAuthority()}
+}
+
+func NewHandlerWithStore(durableStore store.Store) *Handler {
+	return &Handler{authority: session.NewAuthority(), store: durableStore}
 }
 
 func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
@@ -32,6 +41,7 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 			"compatible":            true,
 			"required_capabilities": []string{},
 			"helper_capabilities": []string{
+				"observation_schema_v1",
 				"recording_epoch_v1",
 				"fail_closed_disconnect_v1",
 			},
@@ -41,6 +51,9 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 		})
 
 	case "session.start":
+		if h.store == nil {
+			return ack(message, false, "STORE_NOT_CONFIGURED", nil)
+		}
 		snapshot, err := h.authority.Start()
 		if err != nil {
 			return ack(message, false, "INVALID_TRANSITION", nil)
@@ -55,17 +68,53 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 		return h.transition(message, h.authority.Stop)
 
 	case "observation.submit":
-		if !h.authority.AcceptsObservation(message.SessionID, message.RecordingEpoch) {
-			return ack(message, false, "STALE_OR_UNAUTHORIZED_AUTHORITY", nil)
-		}
-		// Deliberately fail closed until the production observation validator/store
-		// are implemented. The reference Python harness remains the conformance
-		// oracle for observation semantics in the meantime.
-		return ack(message, false, "OBSERVATION_PIPELINE_NOT_IMPLEMENTED", nil)
+		return h.handleObservation(message)
 
 	default:
 		return ack(message, false, "UNKNOWN_MESSAGE_KIND", nil)
 	}
+}
+
+func (h *Handler) handleObservation(message protocol.Envelope) protocol.Envelope {
+	snapshot := h.authority.Snapshot()
+	if snapshot.State != session.Recording {
+		return ack(message, false, "NOT_RECORDING", nil)
+	}
+	if message.SessionID != snapshot.SessionID {
+		return ack(message, false, "UNKNOWN_SESSION", nil)
+	}
+	if message.RecordingEpoch != snapshot.RecordingEpoch {
+		return ack(message, false, "STALE_EPOCH", nil)
+	}
+
+	payload, err := protocol.DecodePayload[observation.SubmitPayload](message)
+	if err != nil || len(payload.Event) == 0 {
+		return ack(message, false, "INVALID_SCHEMA", nil)
+	}
+	validated, err := observation.DecodeAndValidate(payload.Event)
+	if err != nil {
+		var validation *observation.ValidationError
+		if errors.As(err, &validation) && len(validation.Codes) > 0 {
+			return ack(message, false, validation.Codes[0], map[string]any{"errors": validation.Codes})
+		}
+		return ack(message, false, "INVALID_SCHEMA", nil)
+	}
+	if validated.EventType() == "session_state" {
+		return ack(message, false, "STATE_EVENT_HELPER_AUTHORITY", nil)
+	}
+	if validated.SessionID() != message.SessionID {
+		return ack(message, false, "UNKNOWN_SESSION", nil)
+	}
+	if validated.RecordingEpoch() != message.RecordingEpoch {
+		return ack(message, false, "STALE_EPOCH", nil)
+	}
+	if h.store == nil {
+		return ack(message, false, "STORE_NOT_CONFIGURED", nil)
+	}
+	if err := h.store.Append(context.Background(), validated); err != nil {
+		return ack(message, false, "STORE_ERROR", nil)
+	}
+	return ack(message, true, "OK", nil)
 }
 
 type transitionFunc func(string, uint64) (session.Snapshot, error)

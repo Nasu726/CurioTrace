@@ -1,6 +1,6 @@
 # CurioTrace M1 Implementation Plan
 
-Status: implementation decomposition for issue #9. This plan deliberately separates browser-independent work from #8 empirical-browser decisions.
+Status: active implementation decomposition for issue #9. This plan deliberately separates browser-independent work from #8 empirical-browser decisions.
 
 ## 1. M1 outcome
 
@@ -45,6 +45,14 @@ Responsibilities:
 - send only protocol-allowed data classes;
 - surface backpressure/rejection reason codes without logging sensitive payloads.
 
+Production baseline:
+
+- `apps/extension/src/protocol-client.ts`
+
+Independent reference oracle:
+
+- `spikes/extension_authority_harness/protocol-client-state.mjs`
+
 Normative reference:
 
 - `docs/NATIVE_HELPER_PROTOCOL.md`
@@ -58,11 +66,15 @@ Responsibilities:
 - reject completion if connection generation/session/epoch changed;
 - prevent observation materialization after Pause/Stop/Interrupted/disconnect.
 
-Reference implementation:
+Production baseline:
+
+- `apps/extension/src/capture-authority.ts`
+
+Independent reference oracle:
 
 - `spikes/extension_authority_harness/capture-authority.mjs`
 
-This logic is browser-independent and already has CI tests.
+This logic is browser-independent and covered by CI.
 
 ### D. Browser event collector
 
@@ -109,18 +121,30 @@ M1 must not make higher layers depend on whether the observation came from DOM, 
 
 Until #8 is resolved, these are adapter internals, not assumptions in storage/schema/UI.
 
-### F. Observation builder
+### F. Observation builder and validator
 
-Responsibilities:
+Extension-side builder responsibilities:
 
 - convert browser/capture results into `observation-v1` semantics;
 - attach wall-clock + monotonic time;
 - attach current session/epoch;
 - normalize explicit gap/error/privacy result states;
-- enforce bounded payloads;
+- enforce bounded payloads before transport where practical;
 - never turn unknown/missing data into fabricated content.
 
-Normative reference:
+Helper-side validation responsibilities:
+
+- revalidate shape and privacy semantics independently of the extension;
+- reject unknown/missing/null schema fields where forbidden by the durable schema;
+- reject raw raster/form/clipboard-sensitive fields;
+- enforce capture-mode-specific payload restrictions;
+- create a `ValidatedEvent` only after validation succeeds.
+
+Production helper baseline is being implemented under:
+
+- `apps/helper/internal/observation/`
+
+Normative references:
 
 - `docs/OBSERVATION_SCHEMA.md`
 - `schemas/observation-v1.schema.json`
@@ -136,11 +160,16 @@ Responsibilities:
 - helper disconnect/recovery semantics;
 - storage orchestration.
 
-Reference-only implementation exists under:
+Production baseline:
+
+- Go helper under `apps/helper/`;
+- stdlib Native Messaging framing and session authority are implemented and CI-tested.
+
+Independent reference oracle:
 
 - `spikes/native_helper_harness/`
 
-Production language/runtime remains open.
+Implementation-stack rationale is recorded in `docs/IMPLEMENTATION_STACK.md` and remains replaceable without changing product semantics.
 
 ### H. Durable store
 
@@ -154,7 +183,19 @@ M1 storage contract:
 - session deletion can identify/remove all managed records for that session;
 - enough metadata exists to inspect a session after browser/application restart.
 
-The concrete database/encryption library is not fixed by M1 planning. Production selection must preserve the product's encryption/storage-protection commitments.
+Current production boundary:
+
+- `Store.Append` accepts `ValidatedEvent`, not raw protocol payloads;
+- an in-memory store exists only for tests/conformance;
+- the default helper fails closed rather than pretending to persist when no durable backend is configured.
+
+Still pending:
+
+- concrete application-private durable database;
+- encryption/key-management implementation;
+- restart/recovery integration with that production store.
+
+The concrete database/encryption library must preserve the product's encryption/storage-protection commitments.
 
 ### I. Minimal session inspector
 
@@ -222,30 +263,34 @@ Native port disconnects
 
 Only a helper-accepted, schema/privacy-valid observation reaches durable persistence.
 
-Recommended M1 layering:
+Required M1 layering:
 
 ```text
 Native message
   -> protocol envelope validation
   -> session/epoch authority validation
-  -> observation schema validation
+  -> observation shape/schema validation
   -> privacy semantic validation
+  -> ValidatedEvent
   -> bounded durable-store append
   -> small acknowledgement
 ```
 
-Do not write the payload to debug logs before validation.
+Do not write the payload to debug logs before validation. Store APIs should accept the validated type rather than raw transport data so validation cannot be accidentally skipped by ordinary call sites.
 
 ## 7. Testing layers
 
 ### Every CI run
 
-Parallel cheap jobs:
+Independent cheap jobs run in parallel:
 
 - Python native-helper protocol/privacy reference tests;
-- Node extension capture-authority tests;
-- JSON schema syntax/shape validation;
-- later: pure store/observation-builder tests.
+- Node extension reference authority/protocol tests;
+- Go production-helper format/test/build checks;
+- TypeScript production-extension build/conformance tests;
+- JSON schema syntax/shape validation.
+
+As production modules are added, their tests join the appropriate production job rather than replacing the independent reference oracles.
 
 ### Browser integration after #8 environment is available
 
@@ -263,13 +308,13 @@ Synthetic canaries must never appear in forbidden durable/log/external outputs.
 
 See `docs/EVALUATION.md`.
 
-## 8. M1 implementation order
+## 8. M1 implementation order and current status
 
 1. **Protocol/schema/reference invariants** — completed baseline.
-2. **Extension capture-authority guard** — completed reference baseline.
-3. **Native protocol client abstraction** — implement without browser-specific capture assumptions.
-4. **Observation builder + durable-store interface** — implement/test with synthetic events.
-5. **M1 session authority/storage helper** — production-oriented skeleton behind fixed interfaces.
+2. **Extension capture-authority guard** — completed reference and production-state-machine baseline.
+3. **Native protocol client abstraction** — completed browser-independent production baseline.
+4. **Observation validation + store interface** — active; production helper implementation and tests are in progress, durable backend intentionally not selected here.
+5. **M1 session authority/storage helper** — session authority/protocol skeleton completed; production durable backend/restart integration pending.
 6. **Extension UI + permission flow** — wire fixed onboarding semantics.
 7. **Browser event collector** — navigation/visibility first.
 8. **Capture adapter** — integrate #8 findings; normal HTML first.
@@ -285,6 +330,7 @@ Do not claim M1 complete if any of the following remains true:
 - old-epoch async results can be persisted;
 - unredacted raster crosses the extension -> helper boundary on the normal semantic path;
 - blocked/private/editable canaries reach durable data;
+- unvalidated protocol data can reach the durable store through an ordinary production API;
 - browser restart/recovery semantics contradict the product lifecycle;
 - #8 empirical tests contradict the selected capture adapter behavior;
 - a session cannot be inspected without an LLM/network connection.
@@ -293,7 +339,6 @@ Do not claim M1 complete if any of the following remains true:
 
 M1 planning does not yet fix:
 
-- production native-helper language;
 - frontend framework (if any);
 - production database/encryption library;
 - OCR engine mix;
@@ -301,4 +346,6 @@ M1 planning does not yet fix:
 - final UI visual design;
 - final capture debounce constants.
 
-These should be chosen from evidence/maintenance needs, not accidentally encoded into the product contract.
+The current TypeScript extension + Go helper baseline is documented in `docs/IMPLEMENTATION_STACK.md`; changing that engineering baseline does not alter the product contract.
+
+Deferred choices should be made from evidence/maintenance needs, not accidentally encoded into product semantics.

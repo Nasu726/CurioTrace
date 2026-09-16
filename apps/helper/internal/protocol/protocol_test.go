@@ -35,7 +35,11 @@ func TestTruncatedMessageFails(t *testing.T) {
 }
 
 func TestOutboundLimit(t *testing.T) {
-	payload := bytes.Repeat([]byte{'x'}, MaxOutboundMessageBytes+1)
+	payload := make([]byte, 0, MaxOutboundMessageBytes+3)
+	payload = append(payload, '"')
+	payload = append(payload, bytes.Repeat([]byte{'x'}, MaxOutboundMessageBytes+1)...)
+	payload = append(payload, '"')
+
 	var buffer bytes.Buffer
 	err := Write(&buffer, Envelope{ProtocolVersion: Version, Kind: "ack", Payload: payload})
 	if !errors.Is(err, ErrMessageTooLarge) {
