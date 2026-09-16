@@ -166,12 +166,21 @@ Production baseline:
 
 - Go helper under `apps/helper/`;
 - stdlib Native Messaging framing and session authority are implemented and CI-tested;
-- Start and Resume fail closed when the durable store/key path is unavailable;
-- mid-session durable append failure moves helper authority to `INTERRUPTED` and invalidates the epoch.
+- Start and Resume fail closed when the durable observation store/key path is unavailable;
+- helper-authoritative control state has a durable append-only journal independent of browsing observations;
+- startup converts persisted unfinished `RECORDING`/`PAUSED` state to `INTERRUPTED` with a fresh epoch before authority is exposed;
+- Start/Resume become `RECORDING` only after their authority snapshots are durably committed;
+- a failed transition out of active recording revokes in-memory capture authority rather than leaving it active;
+- mid-session durable observation append failure moves helper authority to `INTERRUPTED` and invalidates the epoch;
+- `durable_session_authority_v1` is advertised only by helper instances actually wired to the durable authority repository.
 
 Independent reference oracle:
 
 - `spikes/native_helper_harness/`
+
+Normative implementation note:
+
+- `docs/DURABLE_SESSION_AUTHORITY.md`
 
 Implementation-stack rationale is recorded in `docs/IMPLEMENTATION_STACK.md` and remains replaceable without changing product semantics.
 
@@ -197,22 +206,24 @@ Current production boundary:
 - AES-256-GCM is the production record-confidentiality/authentication codec;
 - `SystemKeyProvider` implements first-use provisioning, current-key pointers, historical-key lookup, explicit rotation, corruption detection, and fail-closed key lifecycle semantics behind a narrow OS-secret-store adapter boundary;
 - Windows Credential Manager, macOS Keychain, and Linux Secret Service are the only allowed production secret-store classes; file/pass/keyctl fallback is forbidden;
-- the concrete native OS adapter is still pending, so the default helper remains unable to Start normal recording.
+- helper session authority durability/restart conversion is implemented separately from observation persistence so browsing content is not copied into the control journal;
+- the concrete native OS secret-store adapter and final platform root wiring are still pending, so the default helper remains unable to Start normal recording.
 
 Normative implementation notes:
 
 - `docs/DURABLE_STORAGE.md`
 - `docs/ENCRYPTED_STORAGE.md`
 - `docs/SYSTEM_KEY_PROVIDER.md`
+- `docs/DURABLE_SESSION_AUTHORITY.md`
 
 Still pending:
 
 - concrete Windows Credential Manager / macOS Keychain / Linux Secret Service adapter;
 - application-private root-directory discovery/installation per OS;
-- durable helper-authoritative session state;
-- restart conversion of unfinished `RECORDING` / `PAUSED` state to `INTERRUPTED` with a fresh epoch.
+- production CLI/bootstrap wiring that combines the platform root, encrypted observation store, system key provider, and durable authority repository;
+- explicit single-helper/profile locking or equivalent coordination before multiple helper processes could ever become authoritative for the same profile.
 
-Do not wire a plaintext testing codec into normal recording merely to make the file backend usable.
+Do not wire a plaintext testing codec or generic secret-store fallback into normal recording merely to make the file backend usable.
 
 ### I. Minimal session inspector
 
@@ -240,7 +251,11 @@ User presses Start
   |
   +-- production-safe durable store/key path ready? ----- no --> setup/repair; remain IDLE
   |
-  +-- helper session.start -> helper returns session_id + epoch + RECORDING
+  +-- durable session-authority journal available? ------ no --> remain IDLE
+  |
+  +-- helper session.start
+  |     -> persist RECORDING snapshot
+  |     -> return session_id + epoch + RECORDING only after persistence succeeds
   |
   +-- extension capture guard applies helper authority
   |
@@ -258,13 +273,14 @@ Pause/Stop is helper-authoritative.
 1. user requests Pause/Stop;
 2. extension immediately enters a local `capture_requested_off` guard so it does not initiate new expensive capture work while the control round-trip is pending;
 3. helper validates transition and increments epoch;
-4. extension applies returned non-recording state/new epoch;
-5. content observers are disabled/unregistered where practical;
-6. any in-flight result holding the old capture token fails token validation and is discarded before observation construction/transport.
+4. helper commits the non-recording authority snapshot; if persistence fails while the previous state was `RECORDING`, helper revokes in-memory authority to `INTERRUPTED` and returns the current safe state;
+5. extension applies returned non-recording state/new epoch;
+6. content observers are disabled/unregistered where practical;
+7. any in-flight result holding the old capture token fails token validation and is discarded before observation construction/transport.
 
 A control-message failure must not make the extension continue optimistically. If authority becomes uncertain, fail closed and surface Interrupted/helper-error state.
 
-## 5. Helper disconnect flow
+## 5. Helper disconnect / restart flow
 
 ```text
 Native port disconnects
@@ -274,13 +290,17 @@ Native port disconnects
   -> do not queue page text/screenshots for reconnect
   -> show interrupted/helper unavailable state
   -> reconnect performs fresh handshake
-  -> helper decides whether continuity can be proven
-  -> otherwise require explicit Resume/Stop according to product lifecycle
+  -> helper opens durable authority journal
+  -> persisted RECORDING/PAUSED from an unfinished helper lifetime
+       becomes durable INTERRUPTED + fresh epoch before handshake exposure
+  -> explicit Resume/Stop is required according to product lifecycle
 ```
+
+A browser process failure while the same helper process and authority remain alive is distinct from helper/OS restart. The lifecycle contract, not browser process residency alone, decides whether the same session may continue.
 
 ## 6. Persistence flow
 
-Only a helper-accepted, schema/privacy-valid observation reaches durable persistence.
+Only a helper-accepted, schema/privacy-valid observation reaches durable browsing-observation persistence.
 
 Required M1 layering:
 
@@ -295,6 +315,8 @@ Native message
   -> bounded durable session-log append + Sync
   -> small acknowledgement
 ```
+
+Helper-authoritative control metadata follows a separate bounded state journal and never contains browsing observation payloads.
 
 Do not write the payload to debug logs before validation. Store APIs should accept the validated type rather than raw transport data so validation cannot be accidentally skipped by ordinary call sites.
 
@@ -312,7 +334,7 @@ Independent cheap jobs run in parallel:
 - TypeScript production-extension build/conformance tests;
 - JSON schema syntax/shape validation.
 
-The Go production-helper job includes durable-store and encrypted-key lifecycle tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, authenticated tamper rejection, key rotation, key-state corruption, session deletion, and POSIX access modes where applicable.
+The Go production-helper job includes durable observation-store, encrypted-key lifecycle, and durable-authority tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, authenticated tamper rejection, key rotation, key-state corruption, restart `RECORDING`/`PAUSED` -> `INTERRUPTED`, authority persistence failures, session deletion, and POSIX access modes where applicable.
 
 As production modules are added, their tests join the appropriate production job rather than replacing the independent reference oracles.
 
@@ -324,11 +346,12 @@ As production modules are added, their tests join the appropriate production job
 - PDF/restricted surfaces;
 - screenshot timing/rate;
 - helper Native Messaging end-to-end;
-- Pause/Stop/disconnect while screenshot/capture is in flight.
+- Pause/Stop/disconnect while screenshot/capture is in flight;
+- helper restart while a session was durably `RECORDING` or `PAUSED`, confirming handshake exposes only `INTERRUPTED` with a fresh epoch.
 
 ### Hard privacy tests
 
-Synthetic canaries must never appear in forbidden durable/log/external outputs.
+Synthetic canaries must never appear in forbidden durable/log/external outputs. The authority journal must be inspected independently to confirm that it contains control metadata only.
 
 See `docs/EVALUATION.md`.
 
@@ -338,12 +361,13 @@ See `docs/EVALUATION.md`.
 2. **Extension capture-authority guard** — completed reference and production-state-machine baseline.
 3. **Native protocol client abstraction** — completed browser-independent production baseline.
 4. **Observation validation + store interface** — completed production baseline.
-5. **M1 durable event storage** — per-session framed `FileStore`, AES-256-GCM record codec, and system-key lifecycle core implemented/tested; native OS secret-store adapter and restart-state integration remain active work.
-6. **Extension UI + permission flow** — wire fixed onboarding semantics.
-7. **Browser event collector** — navigation/visibility first.
-8. **Capture adapter** — integrate #8 findings; normal HTML first.
-9. **End-to-end Chrome/Edge session** — Start -> record -> Stop -> inspect.
-10. **M1 privacy/restart/adversarial verification**.
+5. **M1 durable event storage** — per-session framed `FileStore`, AES-256-GCM record codec, and system-key lifecycle core implemented/tested; native OS secret-store adapter remains active platform work.
+6. **Durable helper session authority / restart recovery** — production baseline implemented/tested; final platform-root/bootstrap wiring remains pending.
+7. **Extension UI + permission flow** — wire fixed onboarding semantics.
+8. **Browser event collector** — navigation/visibility first.
+9. **Capture adapter** — integrate #8 findings; normal HTML first.
+10. **End-to-end Chrome/Edge session** — Start -> record -> Stop -> inspect.
+11. **M1 privacy/restart/adversarial verification**.
 
 ## 9. M1 stop conditions
 
@@ -356,7 +380,9 @@ Do not claim M1 complete if any of the following remains true:
 - blocked/private/editable canaries reach durable data;
 - unvalidated protocol data can reach the durable store through an ordinary production API;
 - normal recording can start with a plaintext/testing durable codec or a generic secret-store fallback;
+- production helper can enter `RECORDING` without durable authority persistence;
 - unfinished session state can silently recover as `RECORDING` after helper/OS restart;
+- authority journal corruption is silently repaired beyond an incomplete trailing write;
 - browser restart/recovery semantics contradict the product lifecycle;
 - #8 empirical tests contradict the selected capture adapter behavior;
 - a session cannot be inspected without an LLM/network connection.
@@ -372,6 +398,6 @@ M1 planning does not yet fix:
 - final UI visual design;
 - final capture debounce constants.
 
-The current TypeScript extension + Go helper baseline is documented in `docs/IMPLEMENTATION_STACK.md`; changing that engineering baseline does not alter the product contract. The current per-session durable-log format is likewise an implementation baseline and may be migrated later without changing the product's observation/privacy semantics.
+The current TypeScript extension + Go helper baseline is documented in `docs/IMPLEMENTATION_STACK.md`; changing that engineering baseline does not alter the product contract. The current per-session durable-log and authority-journal formats are likewise implementation baselines and may be migrated later without changing the product's observation/privacy/lifecycle semantics.
 
 Deferred choices should be made from evidence/maintenance needs, not accidentally encoded into product semantics.
