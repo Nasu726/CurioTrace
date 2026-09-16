@@ -166,7 +166,8 @@ Production baseline:
 
 - Go helper under `apps/helper/`;
 - stdlib Native Messaging framing and session authority are implemented and CI-tested;
-- Start fails closed when a usable durable store is not configured.
+- Start and Resume fail closed when the durable store/key path is unavailable;
+- mid-session durable append failure moves helper authority to `INTERRUPTED` and invalidates the epoch.
 
 Independent reference oracle:
 
@@ -193,17 +194,20 @@ Current production boundary:
 - `FileStore` is the current dependency-free M1 durable-backend candidate;
 - `FileStore` uses one hashed-name append-only log per session with codec binding, bounded frames, CRC32C corruption detection, `Sync`, idempotent event IDs, partial-tail crash repair, and physical managed-file deletion;
 - arbitrary corruption/codec mismatch/session mismatch fails closed rather than being silently repaired;
-- record confidentiality/authentication is deliberately separated behind `RecordCodec`;
-- the default helper remains unable to Start normal recording until a production-safe durable store/codec is configured.
+- AES-256-GCM is the production record-confidentiality/authentication codec;
+- `SystemKeyProvider` implements first-use provisioning, current-key pointers, historical-key lookup, explicit rotation, corruption detection, and fail-closed key lifecycle semantics behind a narrow OS-secret-store adapter boundary;
+- Windows Credential Manager, macOS Keychain, and Linux Secret Service are the only allowed production secret-store classes; file/pass/keyctl fallback is forbidden;
+- the concrete native OS adapter is still pending, so the default helper remains unable to Start normal recording.
 
-Normative implementation note:
+Normative implementation notes:
 
 - `docs/DURABLE_STORAGE.md`
+- `docs/ENCRYPTED_STORAGE.md`
+- `docs/SYSTEM_KEY_PROVIDER.md`
 
 Still pending:
 
-- authenticated-encryption production `RecordCodec`;
-- platform-appropriate key/secret provider;
+- concrete Windows Credential Manager / macOS Keychain / Linux Secret Service adapter;
 - application-private root-directory discovery/installation per OS;
 - durable helper-authoritative session state;
 - restart conversion of unfinished `RECORDING` / `PAUSED` state to `INTERRUPTED` with a fresh epoch.
@@ -287,7 +291,7 @@ Native message
   -> observation shape/schema validation
   -> privacy semantic validation
   -> ValidatedEvent
-  -> production RecordCodec
+  -> AES-256-GCM RecordCodec
   -> bounded durable session-log append + Sync
   -> small acknowledgement
 ```
@@ -308,7 +312,7 @@ Independent cheap jobs run in parallel:
 - TypeScript production-extension build/conformance tests;
 - JSON schema syntax/shape validation.
 
-The Go production-helper job includes durable-store tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, session deletion, and POSIX access modes where applicable.
+The Go production-helper job includes durable-store and encrypted-key lifecycle tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, authenticated tamper rejection, key rotation, key-state corruption, session deletion, and POSIX access modes where applicable.
 
 As production modules are added, their tests join the appropriate production job rather than replacing the independent reference oracles.
 
@@ -334,7 +338,7 @@ See `docs/EVALUATION.md`.
 2. **Extension capture-authority guard** — completed reference and production-state-machine baseline.
 3. **Native protocol client abstraction** — completed browser-independent production baseline.
 4. **Observation validation + store interface** — completed production baseline.
-5. **M1 durable event storage** — per-session framed `FileStore` candidate implemented/tested; production authenticated codec/key provider and restart state integration remain active work.
+5. **M1 durable event storage** — per-session framed `FileStore`, AES-256-GCM record codec, and system-key lifecycle core implemented/tested; native OS secret-store adapter and restart-state integration remain active work.
 6. **Extension UI + permission flow** — wire fixed onboarding semantics.
 7. **Browser event collector** — navigation/visibility first.
 8. **Capture adapter** — integrate #8 findings; normal HTML first.
@@ -351,7 +355,7 @@ Do not claim M1 complete if any of the following remains true:
 - unredacted raster crosses the extension -> helper boundary on the normal semantic path;
 - blocked/private/editable canaries reach durable data;
 - unvalidated protocol data can reach the durable store through an ordinary production API;
-- normal recording can start with a plaintext/testing durable codec;
+- normal recording can start with a plaintext/testing durable codec or a generic secret-store fallback;
 - unfinished session state can silently recover as `RECORDING` after helper/OS restart;
 - browser restart/recovery semantics contradict the product lifecycle;
 - #8 empirical tests contradict the selected capture adapter behavior;
@@ -362,7 +366,7 @@ Do not claim M1 complete if any of the following remains true:
 M1 planning does not yet fix:
 
 - frontend framework (if any);
-- production authenticated-encryption/key-storage adapter implementation;
+- exact third-party/native OS secret-store adapter implementation;
 - OCR engine mix;
 - installer/update framework;
 - final UI visual design;
