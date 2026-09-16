@@ -1,0 +1,33 @@
+{
+  "id": "fingerprint-only-pdf",
+  "version": 1,
+  "description": "A DOM-inaccessible built-in PDF surface may use transient visual identity, but its unredacted text canary must not become OCR/semantic durable content under the fingerprint-only privacy tier.",
+  "decision_refs": ["#4", "#8", "#23", "docs/CAPTURE_ARCHITECTURE.md", "docs/EVALUATION.md"],
+  "steps": [
+    { "action": "grant_permission" },
+    { "action": "start" },
+    { "action": "navigate", "target": "fixture/fingerprint-only.pdf" },
+    { "action": "wait", "seconds": 2 },
+    { "action": "stop" }
+  ],
+  "expectations": {
+    "must_observe": [],
+    "must_not_observe": [
+      { "content_id": "pdf-canary-text", "source_id": "pdf", "notes": "The visible PDF canary must not be persisted as OCR/semantic text in fingerprint-only mode." }
+    ],
+    "privacy_forbidden_canaries": [
+      "GOLDEN_PDF_CANARY_9F3A"
+    ],
+    "expected_sources": [
+      { "source_id": "pdf", "url_suffix": "/fixture/fingerprint-only.pdf", "title": "fingerprint-only.pdf" }
+    ],
+    "expected_capture_modes": ["fingerprint_only"],
+    "expected_final_state": "FINISHED",
+    "hard_gates": [
+      "unredacted PDF raster does not cross extension -> helper",
+      "fingerprint-only observation contains no OCR text, semantic units, thumbnails, or raster bytes",
+      "raw PDF viewport pixels are discarded after in-extension fingerprint extraction",
+      "semantic unavailability is represented explicitly rather than filled by later URL re-fetch"
+    ]
+  }
+}
