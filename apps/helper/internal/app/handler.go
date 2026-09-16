@@ -51,6 +51,9 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 		})
 
 	case "session.start":
+		if h.store == nil {
+			return ack(message, false, "STORE_NOT_CONFIGURED", nil)
+		}
 		snapshot, err := h.authority.Start()
 		if err != nil {
 			return ack(message, false, "INVALID_TRANSITION", nil)
