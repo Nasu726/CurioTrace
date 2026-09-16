@@ -1,0 +1,40 @@
+{
+  "id": "helper-disconnect",
+  "version": 1,
+  "description": "Losing the native-helper connection during recording must fail closed, invalidate in-flight capture authority, and prevent later visible content from being recorded until explicit recovery.",
+  "decision_refs": ["#2", "#23", "#25", "docs/NATIVE_HELPER_PROTOCOL.md", "docs/EVALUATION.md"],
+  "steps": [
+    { "action": "grant_permission" },
+    { "action": "start" },
+    { "action": "navigate", "target": "fixture/index.html" },
+    { "action": "wait", "seconds": 1 },
+    { "action": "disconnect_helper", "notes": "Disconnect while the top content is the last authorized visible unit." },
+    { "action": "scroll_to", "target": "after" },
+    { "action": "wait", "seconds": 1 },
+    { "action": "restart_helper", "notes": "Restart must recover the unfinished stored session as INTERRUPTED, not RECORDING." }
+  ],
+  "expectations": {
+    "must_observe": [
+      { "content_id": "before-disconnect", "source_id": "disconnect-page", "material_weight": 1 }
+    ],
+    "must_not_observe": [
+      { "content_id": "after-disconnect", "source_id": "disconnect-page", "notes": "This becomes visible only after helper authority is lost." }
+    ],
+    "privacy_forbidden_canaries": [
+      "GOLDEN_MUST_NOT_CAPTURE_AFTER_HELPER_DISCONNECT"
+    ],
+    "expected_sources": [
+      { "source_id": "disconnect-page", "url_suffix": "/fixture/index.html", "title": "Golden helper disconnect" }
+    ],
+    "expected_final_state": "INTERRUPTED",
+    "expected_rejections": [
+      { "reason": "STALE_EPOCH", "minimum_count": 1 }
+    ],
+    "hard_gates": [
+      "helper disconnect removes local capture authority immediately",
+      "no content visible only after disconnect reaches durable outputs",
+      "process restart does not silently restore RECORDING",
+      "old-epoch asynchronous observations are rejected"
+    ]
+  }
+}
