@@ -154,14 +154,17 @@ export class ExtensionProtocolState {
     return { accepted: true, reason: "OK", snapshot: this.snapshot };
   }
 
-  buildObservationSubmit(event) {
-    const tokenCheck = this.#authority.validateCaptureToken({
-      connectionGeneration: this.#authority.snapshot.connectionGeneration,
-      sessionId: event?.session_id,
-      recordingEpoch: event?.recording_epoch,
-    });
+  buildObservationSubmit(event, captureToken) {
+    const tokenCheck = this.#authority.validateCaptureToken(captureToken);
     if (!tokenCheck.valid) {
       return { allowed: false, reason: tokenCheck.reason, message: null };
+    }
+
+    if (
+      event?.session_id !== captureToken.sessionId ||
+      event?.recording_epoch !== captureToken.recordingEpoch
+    ) {
+      return { allowed: false, reason: "EVENT_AUTHORITY_MISMATCH", message: null };
     }
 
     return {
