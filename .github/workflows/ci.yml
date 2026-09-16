@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  protocol-tests:
+  native-helper-protocol:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -18,5 +18,18 @@ jobs:
         run: python -m compileall -q spikes/native_helper_harness tests
       - name: Validate JSON schema syntax
         run: python -m json.tool schemas/observation-v1.schema.json >/dev/null
-      - name: Run unit tests
+      - name: Run Python protocol/privacy tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
+
+  extension-capture-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check extension authority module syntax
+        run: node --check spikes/extension_authority_harness/capture-authority.mjs
+      - name: Run extension authority tests
+        run: node --test tests/extension-capture-authority.test.mjs
