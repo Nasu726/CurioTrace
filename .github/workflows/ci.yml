@@ -6,12 +6,12 @@ on:
   pull_request:
 
 jobs:
-  native-helper-protocol:
+  reference-native-helper:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Compile Python reference code
@@ -21,17 +21,54 @@ jobs:
       - name: Run Python protocol/privacy tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
 
-  extension-capture-authority:
+  reference-extension:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
+          package-manager-cache: false
       - name: Check extension reference module syntax
         run: |
           node --check spikes/extension_authority_harness/capture-authority.mjs
           node --check spikes/extension_authority_harness/protocol-client-state.mjs
       - name: Run extension authority/protocol tests
         run: node --test tests/*.test.mjs
+
+  production-helper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: apps/helper
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Test production helper
+        run: go test ./...
+      - name: Build production helper
+        run: go build ./cmd/curiotrace-helper
+
+  production-extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: apps/extension
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install pinned TypeScript compiler
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Build and test production extension core
+        run: npm test
