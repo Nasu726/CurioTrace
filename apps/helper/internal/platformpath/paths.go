@@ -39,8 +39,9 @@ func Current() (Paths, error) {
 	})
 }
 
-// Resolve is side-effect free so path policy can be tested for every supported
-// OS on one CI runner. Ensure must be called separately before use.
+// Resolve is side-effect free so path policy can be tested for supported OS
+// choices without touching the filesystem. Ensure must be called separately
+// before the returned paths are used.
 func Resolve(goos string, environment Environment) (Paths, error) {
 	getenv := environment.Getenv
 	if getenv == nil {
@@ -115,7 +116,7 @@ func validateLayout(paths Paths) error {
 	if root == "." || root == string(filepath.Separator) || !filepath.IsAbs(root) {
 		return ErrUnsafeStoragePath
 	}
-	if filepath.Dir(observations) != root || filepath.Dir(authority) != root || observations == authority {
+	if observations != filepath.Join(root, "observations") || authority != filepath.Join(root, "authority") {
 		return ErrUnsafeStoragePath
 	}
 	return nil
