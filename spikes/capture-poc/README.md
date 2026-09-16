@@ -6,13 +6,27 @@ Disposable WebExtension harness for issue #8. It is intentionally not product co
 
 On extension-action click:
 
-1. asks the top-frame content script for visible DOM text and sensitive/editable geometry;
-2. overlays magenta masks on editable controls and iframe rectangles;
-3. calls `tabs.captureVisibleTab()`;
-4. removes the masks;
-5. opens an extension result page showing the screenshot, DOM report, capture errors, and timing.
+1. requests the broad HTTP/HTTPS host permission if it has not already been granted, emulating CurioTrace's possible first-`Start` onboarding flow;
+2. dynamically injects the top-frame probe where the browser allows it;
+3. asks the probe for visible DOM text and sensitive/editable geometry;
+4. overlays magenta masks on editable controls and iframe rectangles;
+5. calls `tabs.captureVisibleTab()`;
+6. removes the masks;
+7. opens an extension result page showing permission/injection state, screenshot, DOM report, capture errors, and timing.
 
-The harness deliberately keeps DOM observation and screenshot success/failure separate so restricted surfaces can be compared correctly.
+The harness deliberately keeps host permission, DOM injection, and screenshot success/failure separate so restricted surfaces can be compared correctly.
+
+## Why runtime host permission is part of the spike
+
+The extension manifest uses `optional_host_permissions` instead of requiring `<all_urls>` at install time. Chrome and Firefox MV3 can request optional host access at runtime.
+
+This lets the spike test the intended product distinction:
+
+- installing CurioTrace does not itself authorize observation of every site;
+- the first explicit recording action may explain and request the host access needed for zero-friction cross-site session tracking;
+- once granted, CurioTrace's own `IDLE` / `RECORDING` / `PAUSED` state remains the stricter capture authorization boundary.
+
+If the broad host request is denied, the user-gesture-derived `activeTab` grant may still let the PoC test the current ordinary tab, but that is not sufficient for unattended continuous tracking across arbitrary future tabs/origins.
 
 ## Load
 
@@ -38,7 +52,7 @@ Open:
 
 `http://127.0.0.1:8765/index.html`
 
-Then click the extension action.
+Then click the extension action. On the first run, record the runtime host-permission prompt and whether it was granted.
 
 ## Expected ordinary-page observations
 
@@ -53,30 +67,45 @@ The result should make these distinctions visible:
 
 This harness masks all iframes on purpose. Later variants can test per-frame injection and selective masking.
 
+### Important: the magenta overlay is not the preferred production UX
+
+The overlay exists to prove that DOM-derived geometry can protect known sensitive/editable regions before OCR/persistence. A real product should avoid visibly flashing masks into the user's page if possible.
+
+A stronger production candidate is:
+
+1. collect trusted mask rectangles from the page;
+2. capture the active-tab viewport transiently;
+3. immediately redact the raster inside CurioTrace's trusted local pipeline before OCR, durable persistence, or any external transfer;
+4. discard the unredacted raster.
+
+The native helper is part of CurioTrace's trusted local computing base, but unredacted pixels must still remain transient and must never enter logs or durable storage. Chrome permits messages up to 64 MiB from an extension to a native host; Firefox documents a much larger extension-to-host limit, so a viewport image is technically transportable, subject to empirical memory/latency tests.
+
 ## PDF / restricted-surface test
 
 Open a non-sensitive PDF in the browser's built-in PDF viewer and click the extension action.
 
 Record separately:
 
-- whether the content script responds (`domError`);
+- whether dynamic content-script injection succeeds (`injection` / `domError`);
 - whether `captureVisibleTab()` succeeds (`captureError` / screenshot).
 
 Repeat on a harmless browser-internal/restricted page if the browser permits the action. Do not use a page containing sensitive account data.
 
-The important property is that screenshot eligibility must not be inferred from DOM-injection eligibility.
+The important property is that screenshot eligibility must not be inferred from DOM-injection eligibility. MDN explicitly documents that content scripts cannot run in the built-in PDF viewer and other privileged browser UI, while `captureVisibleTab()` can capture some otherwise restricted surfaces.
 
 ## Navigation / permissions test
 
 With the PoC loaded:
 
-1. capture one origin;
-2. navigate the same tab to another origin;
-3. open another tab/origin;
-4. capture again;
-5. record permission prompts and whether DOM/screenshot behavior changes.
+1. note the first-click host-permission prompt;
+2. capture one origin;
+3. navigate the same tab to another origin;
+4. open another tab/origin;
+5. capture again;
+6. record whether the permission persists and whether DOM/screenshot behavior changes;
+7. revoke the host permission in the browser's extension settings and repeat.
 
-This informs whether CurioTrace requires broad host permissions for zero-friction session tracking.
+This tests whether a one-time explicit permission grant can support zero-friction recording while CurioTrace's own Start/Pause/Stop state controls actual capture.
 
 ## Scroll / rate test
 
@@ -88,23 +117,27 @@ The product should eventually schedule captures from navigation/scroll/resize/mu
 
 Fill this into issue #8 for each browser/surface:
 
-| Browser/surface | DOM works | sensitive geometry known | screenshot works | pre-mask works | capture ms | notes |
-|---|---:|---:|---:|---:|---:|---|
-| Chrome ordinary HTML | | | | | | |
-| Edge ordinary HTML | | | | | | |
-| Chrome PDF viewer | | | | | | |
-| Edge PDF viewer | | | | | | |
-| cross-origin iframe | | | | | | |
-| canvas/image text | | | | | | |
-| restricted browser page | | | | | | |
-| Firefox parity check | | | | | | |
+| Browser/surface | host permission | DOM works | sensitive geometry known | screenshot works | pre-mask works | capture ms | notes |
+|---|---|---:|---:|---:|---:|---:|---|
+| Chrome ordinary HTML | | | | | | | |
+| Edge ordinary HTML | | | | | | | |
+| Chrome PDF viewer | n/a/restricted | | | | | | |
+| Edge PDF viewer | n/a/restricted | | | | | | |
+| cross-origin iframe | | | | | | | |
+| canvas/image text | | | | | | | |
+| restricted browser page | n/a/restricted | | | | | | |
+| Firefox parity check | | | | | | | |
 
 ## References
 
 - Chrome tabs API: https://developer.chrome.com/docs/extensions/reference/api/tabs
 - Chrome scripting API: https://developer.chrome.com/docs/extensions/reference/api/scripting
+- Chrome permissions API: https://developer.chrome.com/docs/extensions/reference/api/permissions
+- Chrome native messaging: https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging
 - MDN `tabs.captureVisibleTab`: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabs/captureVisibleTab
 - MDN content scripts: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Content_scripts
+- MDN optional host permissions: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/optional_host_permissions
+- MDN native messaging: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging
 
 ## Safety
 
