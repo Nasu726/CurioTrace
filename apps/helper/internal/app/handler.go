@@ -28,15 +28,15 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 	case "hello":
 		snapshot := h.authority.Snapshot()
 		return reply(message, "hello.ack", map[string]any{
-			"helper_version": helperVersion,
-			"compatible": true,
+			"helper_version":        helperVersion,
+			"compatible":            true,
 			"required_capabilities": []string{},
 			"helper_capabilities": []string{
 				"recording_epoch_v1",
 				"fail_closed_disconnect_v1",
 			},
-			"session_state": snapshot.State,
-			"session_id": nullableString(snapshot.SessionID),
+			"session_state":   snapshot.State,
+			"session_id":      nullableString(snapshot.SessionID),
 			"recording_epoch": snapshot.RecordingEpoch,
 		})
 
@@ -80,8 +80,8 @@ func (h *Handler) transition(message protocol.Envelope, transition transitionFun
 
 func statePayload(snapshot session.Snapshot) map[string]any {
 	return map[string]any{
-		"state": snapshot.State,
-		"session_id": nullableString(snapshot.SessionID),
+		"state":           snapshot.State,
+		"session_id":      nullableString(snapshot.SessionID),
 		"recording_epoch": snapshot.RecordingEpoch,
 	}
 }
@@ -98,9 +98,9 @@ func reply(request protocol.Envelope, kind string, payload any) protocol.Envelop
 	raw, _ := json.Marshal(payload)
 	return protocol.Envelope{
 		ProtocolVersion: protocol.Version,
-		MessageID: request.MessageID,
-		Kind: kind,
-		Payload: raw,
+		MessageID:       request.MessageID,
+		Kind:            kind,
+		Payload:         raw,
 	}
 }
 
