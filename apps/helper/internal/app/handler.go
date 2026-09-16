@@ -54,6 +54,9 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 		if h.store == nil {
 			return ack(message, false, "STORE_NOT_CONFIGURED", nil)
 		}
+		if err := h.store.Ready(context.Background()); err != nil {
+			return ack(message, false, "STORE_UNAVAILABLE", nil)
+		}
 		snapshot, err := h.authority.Start()
 		if err != nil {
 			return ack(message, false, "INVALID_TRANSITION", nil)
