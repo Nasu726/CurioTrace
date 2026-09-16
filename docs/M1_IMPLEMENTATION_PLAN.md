@@ -166,7 +166,8 @@ Production baseline:
 
 - Go helper under `apps/helper/`;
 - stdlib Native Messaging framing and session authority are implemented and CI-tested;
-- Start fails closed when a usable durable store is not configured.
+- Start and Resume preflight durable-store/key readiness before entering `RECORDING`;
+- durable append failure interrupts helper authority and advances the recording epoch.
 
 Independent reference oracle:
 
@@ -174,7 +175,7 @@ Independent reference oracle:
 
 Implementation-stack rationale is recorded in `docs/IMPLEMENTATION_STACK.md` and remains replaceable without changing product semantics.
 
-### H. Durable store
+### H. Durable store and encryption
 
 M1 storage contract:
 
@@ -193,22 +194,25 @@ Current production boundary:
 - `FileStore` is the current dependency-free M1 durable-backend candidate;
 - `FileStore` uses one hashed-name append-only log per session with codec binding, bounded frames, CRC32C corruption detection, `Sync`, idempotent event IDs, partial-tail crash repair, and physical managed-file deletion;
 - arbitrary corruption/codec mismatch/session mismatch fails closed rather than being silently repaired;
-- record confidentiality/authentication is deliberately separated behind `RecordCodec`;
-- the default helper remains unable to Start normal recording until a production-safe durable store/codec is configured.
+- `AESGCMCodec` provides the production record confidentiality/authentication baseline using AES-256-GCM, fresh per-record nonces, authenticated key-ID headers, and decrypted-event revalidation;
+- `SystemKeyProvider` lifecycle core provisions AES keys, retains historical keys across explicit rotation, detects malformed/dangling key state, and integrates with `AESGCMCodec` without storing raw keys beside session logs;
+- the secure-store policy accepts only Windows Credential Manager, macOS Keychain, or Linux Secret Service for the corresponding OS, with no generic file/pass/keyctl fallback;
+- the concrete OS secure-store adapter is still pending, so the default helper remains unable to Start normal recording.
 
-Normative implementation note:
+Normative implementation notes:
 
 - `docs/DURABLE_STORAGE.md`
+- `docs/ENCRYPTED_STORAGE.md`
+- `docs/SYSTEM_KEY_PROVIDER.md`
 
 Still pending:
 
-- authenticated-encryption production `RecordCodec`;
-- platform-appropriate key/secret provider;
+- actual OS secure-store adapter and platform-specific integration/build tests;
 - application-private root-directory discovery/installation per OS;
 - durable helper-authoritative session state;
 - restart conversion of unfinished `RECORDING` / `PAUSED` state to `INTERRUPTED` with a fresh epoch.
 
-Do not wire a plaintext testing codec into normal recording merely to make the file backend usable.
+Do not wire a plaintext testing codec or file-backed key fallback into normal recording merely to make the backend usable.
 
 ### I. Minimal session inspector
 
@@ -287,14 +291,15 @@ Native message
   -> observation shape/schema validation
   -> privacy semantic validation
   -> ValidatedEvent
-  -> production RecordCodec
+  -> AESGCMCodec
+  -> SystemKeyProvider -> OS secure-secret adapter
   -> bounded durable session-log append + Sync
   -> small acknowledgement
 ```
 
 Do not write the payload to debug logs before validation. Store APIs should accept the validated type rather than raw transport data so validation cannot be accidentally skipped by ordinary call sites.
 
-A checksum is only an accidental-corruption signal. Cryptographic confidentiality/integrity belongs to the production authenticated-encryption codec and key provider.
+A checksum is only an accidental-corruption signal. Cryptographic confidentiality/integrity belongs to the authenticated-encryption codec and secure key provider.
 
 ## 7. Testing layers
 
@@ -308,7 +313,7 @@ Independent cheap jobs run in parallel:
 - TypeScript production-extension build/conformance tests;
 - JSON schema syntax/shape validation.
 
-The Go production-helper job includes durable-store tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, session deletion, and POSIX access modes where applicable.
+The Go production-helper job includes durable-store tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, session deletion, POSIX access modes where applicable, AES-GCM tamper/wrong-key handling, store readiness, and key-provider provisioning/rotation invariants.
 
 As production modules are added, their tests join the appropriate production job rather than replacing the independent reference oracles.
 
@@ -334,7 +339,7 @@ See `docs/EVALUATION.md`.
 2. **Extension capture-authority guard** — completed reference and production-state-machine baseline.
 3. **Native protocol client abstraction** — completed browser-independent production baseline.
 4. **Observation validation + store interface** — completed production baseline.
-5. **M1 durable event storage** — per-session framed `FileStore` candidate implemented/tested; production authenticated codec/key provider and restart state integration remain active work.
+5. **M1 durable event storage** — per-session framed store, AES-GCM record codec, readiness gates, and system-key lifecycle core implemented/tested; OS secure-store adapter and restart authority persistence remain active work.
 6. **Extension UI + permission flow** — wire fixed onboarding semantics.
 7. **Browser event collector** — navigation/visibility first.
 8. **Capture adapter** — integrate #8 findings; normal HTML first.
@@ -351,7 +356,7 @@ Do not claim M1 complete if any of the following remains true:
 - unredacted raster crosses the extension -> helper boundary on the normal semantic path;
 - blocked/private/editable canaries reach durable data;
 - unvalidated protocol data can reach the durable store through an ordinary production API;
-- normal recording can start with a plaintext/testing durable codec;
+- normal recording can start with a plaintext/testing durable codec or non-native key-store fallback;
 - unfinished session state can silently recover as `RECORDING` after helper/OS restart;
 - browser restart/recovery semantics contradict the product lifecycle;
 - #8 empirical tests contradict the selected capture adapter behavior;
@@ -362,12 +367,12 @@ Do not claim M1 complete if any of the following remains true:
 M1 planning does not yet fix:
 
 - frontend framework (if any);
-- production authenticated-encryption/key-storage adapter implementation;
+- final OS key-store adapter implementation/library;
 - OCR engine mix;
 - installer/update framework;
 - final UI visual design;
 - final capture debounce constants.
 
-The current TypeScript extension + Go helper baseline is documented in `docs/IMPLEMENTATION_STACK.md`; changing that engineering baseline does not alter the product contract. The current per-session durable-log format is likewise an implementation baseline and may be migrated later without changing the product's observation/privacy semantics.
+The current TypeScript extension + Go helper baseline is documented in `docs/IMPLEMENTATION_STACK.md`; changing that engineering baseline does not alter the product contract. The current per-session durable-log format and key-store adapter boundary are likewise implementation baselines and may be migrated later without changing the product's observation/privacy semantics.
 
 Deferred choices should be made from evidence/maintenance needs, not accidentally encoded into product semantics.
