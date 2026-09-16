@@ -47,15 +47,10 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 			"helper_version":        helperVersion,
 			"compatible":            true,
 			"required_capabilities": []string{},
-			"helper_capabilities": []string{
-				"observation_schema_v1",
-				"recording_epoch_v1",
-				"fail_closed_disconnect_v1",
-				"durable_session_authority_v1",
-			},
-			"session_state":   snapshot.State,
-			"session_id":      nullableString(snapshot.SessionID),
-			"recording_epoch": snapshot.RecordingEpoch,
+			"helper_capabilities":   helperCapabilities(h.authority),
+			"session_state":         snapshot.State,
+			"session_id":            nullableString(snapshot.SessionID),
+			"recording_epoch":       snapshot.RecordingEpoch,
 		})
 
 	case "session.start":
@@ -84,6 +79,18 @@ func (h *Handler) Handle(message protocol.Envelope) protocol.Envelope {
 	default:
 		return ack(message, false, "UNKNOWN_MESSAGE_KIND", nil)
 	}
+}
+
+func helperCapabilities(authority *session.Authority) []string {
+	capabilities := []string{
+		"observation_schema_v1",
+		"recording_epoch_v1",
+		"fail_closed_disconnect_v1",
+	}
+	if authority != nil && authority.IsDurable() {
+		capabilities = append(capabilities, "durable_session_authority_v1")
+	}
+	return capabilities
 }
 
 func (h *Handler) storeUnavailableReason() string {
