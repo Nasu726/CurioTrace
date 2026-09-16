@@ -78,3 +78,21 @@ In particular:
 - do not add telemetry involving browsing-derived content/activity without a new review of disclosure/consent requirements.
 
 See #22 and `docs/PRODUCT_SPEC.md`.
+
+## 7. Production implementation status
+
+The browser-independent production state machine is implemented in:
+
+- `apps/extension/src/permission-controller.ts`
+
+It currently enforces:
+
+- exact required runtime host origins `http://*/*` and `https://*/*`;
+- a permission check on every Start attempt, so permission revoked between sessions is detected;
+- no browser permission request before the CurioTrace explanation state has been reached and the user explicitly chooses the Continue action;
+- no helper/session Start call after denial, cancellation, permission API failure, or an ineffective grant;
+- rechecking the permission before helper Start;
+- skipping repeated explanation/request when the permission is already granted;
+- fail-closed handling of concurrent Start attempts and helper Start rejection/failure.
+
+`WebExtensionHostPermissionPort` is a thin Promise-based adapter for the current Chromium/Firefox permissions API shape. The concrete extension manifest, popup/onboarding UI, user-action event wiring, and browser-level permission integration tests are still pending. Until those adapters are wired and tested, this section does not claim that the production browser extension can yet perform the complete first-Start flow.
