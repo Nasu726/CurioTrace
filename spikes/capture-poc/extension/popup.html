@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <title>CurioTrace Capture PoC</title>
 <style>
-  body { font: 14px system-ui, sans-serif; width: 320px; margin: 16px; line-height: 1.45; }
+  body { font: 14px system-ui, sans-serif; width: 330px; margin: 16px; line-height: 1.45; }
   h1 { font-size: 16px; margin: 0 0 10px; }
   p { margin: 8px 0; }
   ul { padding-left: 20px; }
@@ -10,13 +10,14 @@
   #status { margin-top: 10px; white-space: pre-wrap; font-size: 12px; }
 </style>
 <h1>Why CurioTrace asks for website access</h1>
-<p>This PoC needs permission to read ordinary HTTP/HTTPS pages while a recording session is active so it can follow browsing across sites and reconstruct what was actually visible.</p>
+<p>CurioTrace needs access to normal web pages while a recording session is active so the same session can stay complete as you move between sites and tabs.</p>
 <ul>
-  <li>Installing the extension alone does not start capture.</li>
+  <li>Granting this permission does not start background monitoring.</li>
+  <li>CurioTrace reads browsing content only after Start and stops while Paused or after Stop.</li>
   <li>Private/incognito and excluded pages remain outside the intended capture scope.</li>
-  <li>The permission is not consent to send page contents to an external model.</li>
-  <li>If you decline the website-access permission, the recording test will not start.</li>
+  <li>This permission does not authorize sending browsing data to an external AI service.</li>
+  <li>If you decline, the recording test will not start rather than silently creating a partial session.</li>
 </ul>
-<button id="run">Continue and request website access</button>
+<button id="run">Continue to browser permission</button>
 <div id="status" role="status"></div>
 <script src="popup.js"></script>
