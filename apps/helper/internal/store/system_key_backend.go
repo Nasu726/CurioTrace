@@ -9,8 +9,8 @@ type SystemSecretBackend string
 
 const (
 	SystemSecretBackendWindowsCredentialManager SystemSecretBackend = "windows-credential-manager"
-	SystemSecretBackendMacOSKeychain             SystemSecretBackend = "macos-keychain"
-	SystemSecretBackendLinuxSecretService        SystemSecretBackend = "linux-secret-service"
+	SystemSecretBackendMacOSKeychain            SystemSecretBackend = "macos-keychain"
+	SystemSecretBackendLinuxSecretService       SystemSecretBackend = "linux-secret-service"
 )
 
 var ErrUnsupportedSecureStorePlatform = errors.New("no supported system secure-secret backend")
