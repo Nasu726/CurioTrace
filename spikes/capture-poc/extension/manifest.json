@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "CurioTrace Capture PoC",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Disposable capture/masking/permission spike for CurioTrace issue #8.",
   "permissions": ["activeTab", "scripting", "storage"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {
+    "scripts": ["service-worker.js"],
     "service_worker": "service-worker.js"
   },
   "action": {
