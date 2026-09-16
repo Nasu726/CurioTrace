@@ -29,7 +29,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Check extension authority module syntax
-        run: node --check spikes/extension_authority_harness/capture-authority.mjs
-      - name: Run extension authority tests
-        run: node --test tests/extension-capture-authority.test.mjs
+      - name: Check extension reference module syntax
+        run: |
+          node --check spikes/extension_authority_harness/capture-authority.mjs
+          node --check spikes/extension_authority_harness/protocol-client-state.mjs
+      - name: Run extension authority/protocol tests
+        run: node --test tests/*.test.mjs
