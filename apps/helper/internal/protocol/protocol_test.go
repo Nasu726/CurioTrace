@@ -9,9 +9,9 @@ import (
 func TestNativeMessageRoundTrip(t *testing.T) {
 	input := Envelope{
 		ProtocolVersion: Version,
-		MessageID: "m1",
-		Kind: "hello",
-		Payload: []byte(`{"capabilities":[]}`),
+		MessageID:       "m1",
+		Kind:            "hello",
+		Payload:         []byte(`{"capabilities":[]}`),
 	}
 	var buffer bytes.Buffer
 	if err := Write(&buffer, input); err != nil {
