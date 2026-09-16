@@ -1,0 +1,33 @@
+{
+  "id": "privacy-redaction",
+  "version": 1,
+  "description": "Ordinary visible text remains observable while editable/password/iframe canaries are forbidden from durable outputs.",
+  "decision_refs": ["#4", "#8", "#15"],
+  "steps": [
+    { "action": "start" },
+    { "action": "navigate", "target": "fixture/index.html" },
+    { "action": "wait", "seconds": 3 },
+    { "action": "stop" }
+  ],
+  "expectations": {
+    "must_observe": [
+      { "content_id": "safe-visible", "source_id": "privacy-page", "material_weight": 1 }
+    ],
+    "must_not_observe": [
+      { "content_id": "editable-value", "source_id": "privacy-page" },
+      { "content_id": "password-value", "source_id": "privacy-page" },
+      { "content_id": "frame-secret", "source_id": "privacy-page" }
+    ],
+    "privacy_forbidden_canaries": [
+      "CT_CANARY_EDITABLE_7H2J",
+      "CT_CANARY_PASSWORD_9Q4M",
+      "CT_CANARY_FRAME_5K8P"
+    ],
+    "expected_sources": [
+      { "source_id": "privacy-page", "url_suffix": "/fixture/index.html", "title": "Golden privacy redaction" }
+    ],
+    "hard_gates": [
+      "zero forbidden canary occurrences in durable outputs/logs/mock external payloads"
+    ]
+  }
+}
