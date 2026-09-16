@@ -4,7 +4,7 @@ Status: initial QA contract for issue #15. Numerical soft targets should be cali
 
 ## 1. Purpose
 
-CurioTrace intentionally discards high-fidelity page/screenshot intermediates after successful session finalization. Evaluation therefore has to detect information loss, unsupported reconstruction, privacy failures, and provenance breakage before a capture or Markdown-generation implementation is considered safe to rely on.
+CurioTrace intentionally discards high-fidelity page/screenshot intermediates after successful session finalization. Evaluation therefore has to detect information loss, unsupported reconstruction, privacy failures, provenance breakage, and capture-authority/protocol failures before an implementation is considered safe to rely on.
 
 The same versioned golden sessions should compare:
 
@@ -14,7 +14,8 @@ The same versioned golden sessions should compare:
 - Session Viewer behavior;
 - deterministic fallback Markdown;
 - frontier-model `session.md` generation;
-- browser/platform variants.
+- browser/platform variants;
+- extension/native-helper protocol and fail-closed behavior.
 
 Use repository-owned synthetic fixtures wherever possible so tests do not depend on third-party copyrighted/private content.
 
@@ -61,7 +62,10 @@ The initial suite should contain repository-owned local fixtures for:
 17. permission denial before Start;
 18. Pause and interrupted-session recovery;
 19. summarizer failure / grace-window expiry / trace-only fallback;
-20. URL that later returns changed content, to verify later re-fetch is never attributed to the historical observation.
+20. URL that later returns changed content, to verify later re-fetch is never attributed to the historical observation;
+21. helper disconnect during asynchronous capture, followed by a late old-epoch observation;
+22. Tier-2 fingerprint-only capture with a privacy canary visibly present in the raster but forbidden from OCR/semantic output;
+23. redacted-raster fallback with editable/sensitive canaries inside masked regions.
 
 ## 4. Evaluation layers
 
@@ -166,6 +170,25 @@ Give the finalized `session.md` to an ingest agent **without CurioTrace internal
 - preserve gaps/uncertainty;
 - ingest the artifact as one immutable source rather than mistaking it for a finished Wiki page.
 
+### H. Protocol / capture-authority invariants — hard gate
+
+Protocol robustness is part of privacy/correctness, not merely transport reliability.
+
+Verify mechanically that:
+
+- helper/session authority is required before content acquisition is accepted;
+- Pause/Stop/Interrupted changes the recording epoch and invalidates asynchronous observations created under the old epoch;
+- helper disconnect causes capture authority to fail closed rather than buffering raw content for later transmission;
+- stale/unknown-session observations are rejected without being persisted for debugging;
+- rejection acknowledgements do not echo sensitive payloads;
+- incompatible protocol/schema major versions fail closed;
+- `fingerprint_only` carries no raster bytes, thumbnails, OCR text, or semantic units derived from inaccessible pixels;
+- `redacted_visual` durable events never contain raster bytes and carry the required redaction-policy provenance;
+- known editable/sensitive regions are redacted before raster data crosses the extension -> helper boundary;
+- `blocked`/excluded/private observations cannot acquire forbidden source/content fields merely because IPC/schema supports them.
+
+These invariants are tested first with the browser-independent reference harness, then repeated end-to-end once browser/native integration exists.
+
 ## 5. Hard correctness gates
 
 The following are release-blocking regardless of average score:
@@ -173,6 +196,10 @@ The following are release-blocking regardless of average score:
 - any confirmed privacy-forbidden canary persisted or externally transmitted;
 - capture occurs after a required host-permission denial;
 - capture occurs in `IDLE`/`PAUSED` contrary to the lifecycle contract;
+- content capture continues after helper authority is lost without an explicitly safe recovery path;
+- a stale recording-epoch content observation is accepted into durable state;
+- an unredacted raster crosses the extension -> helper boundary in a path that requires pre-helper redaction;
+- `fingerprint_only` output contains OCR/semantic text or reconstructable image content;
 - excluded page content is durably stored where the privacy contract forbids it;
 - an exact quote is fabricated or materially altered while labelled exact;
 - later-refetched content is represented as historically observed;
@@ -210,7 +237,7 @@ A model is acceptable only if it passes hard gates and reaches the calibrated se
 
 ## 8. Versioning and reproducibility
 
-Golden scenarios, expected manifests, capture implementation, analyzers, Markdown schema, prompts/Skills, and evaluation code are versioned independently.
+Golden scenarios, expected manifests, capture implementation, analyzers, Markdown schema, prompts/Skills, protocol/schema versions, and evaluation code are versioned independently.
 
 When an expected result changes because the product semantics changed, update the scenario expectation with an explicit decision reference rather than silently moving the test target.
 
@@ -223,9 +250,12 @@ Split tests so cheap deterministic checks run on every relevant change and expen
 Parallelize independent deterministic tests within available CI cores. Candidate layers:
 
 - schema/unit tests;
+- protocol/state/privacy-invariant reference tests;
 - privacy canary scans;
 - fixture/parser/content-identity tests;
 - browser integration matrix;
 - model evaluation jobs.
+
+The baseline CI should always compile the reference protocol code, validate machine-readable schemas, and run the browser-independent protocol/privacy invariant suite.
 
 Do not send real browsing-history fixtures to CI or external model providers. Public CI uses repository-owned synthetic data only.
