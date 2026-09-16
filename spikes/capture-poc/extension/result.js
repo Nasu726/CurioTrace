@@ -1,4 +1,6 @@
-chrome.storage.local.get("lastCapturePoc").then(({ lastCapturePoc }) => {
+const ext = globalThis.browser ?? chrome;
+
+ext.storage.local.get("lastCapturePoc").then(({ lastCapturePoc }) => {
   const meta = document.getElementById("meta");
   const shot = document.getElementById("shot");
 
