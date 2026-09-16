@@ -42,6 +42,8 @@ type FileStore struct {
 	indexes map[string]map[string][32]byte
 }
 
+var _ Store = (*FileStore)(nil)
+
 func NewFileStore(root string, codec RecordCodec) (*FileStore, error) {
 	if root == "" || codec == nil {
 		return nil, ErrInvalidStore
@@ -106,9 +108,11 @@ func (s *FileStore) Append(_ context.Context, event observation.ValidatedEvent) 
 	binary.BigEndian.PutUint32(frame[4:8], crc32.Checksum(record, crcTable))
 	copy(frame[8:], record)
 	if err := writeAll(file, frame); err != nil {
+		delete(s.indexes, sessionID)
 		return fmt.Errorf("append durable record: %w", err)
 	}
 	if err := file.Sync(); err != nil {
+		delete(s.indexes, sessionID)
 		return fmt.Errorf("sync durable record: %w", err)
 	}
 
