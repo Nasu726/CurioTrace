@@ -184,7 +184,7 @@ Normative implementation note:
 
 Implementation-stack rationale is recorded in `docs/IMPLEMENTATION_STACK.md` and remains replaceable without changing product semantics.
 
-### H. Durable store
+### H. Durable store and platform filesystem layout
 
 M1 storage contract:
 
@@ -207,7 +207,9 @@ Current production boundary:
 - `SystemKeyProvider` implements first-use provisioning, current-key pointers, historical-key lookup, explicit rotation, corruption detection, and fail-closed key lifecycle semantics behind a narrow OS-secret-store adapter boundary;
 - Windows Credential Manager, macOS Keychain, and Linux Secret Service are the only allowed production secret-store classes; file/pass/keyctl fallback is forbidden;
 - helper session authority durability/restart conversion is implemented separately from observation persistence so browsing content is not copied into the control journal;
-- the concrete native OS secret-store adapter and final platform root wiring are still pending, so the default helper remains unable to Start normal recording.
+- platform-local filesystem path policy is implemented under `apps/helper/internal/platformpath`: Windows uses `LOCALAPPDATA`, macOS uses Application Support, Linux uses absolute `XDG_DATA_HOME` or `~/.local/share`; observations and authority use fixed separate child directories;
+- managed final-directory symlinks/non-directories and unsafe layouts are rejected; this is not presented as complete anti-TOCTOU protection against a hostile same-user process;
+- the concrete native OS secret-store adapter and production CLI/bootstrap wiring are still pending, so the default helper remains unable to Start normal recording.
 
 Normative implementation notes:
 
@@ -215,12 +217,12 @@ Normative implementation notes:
 - `docs/ENCRYPTED_STORAGE.md`
 - `docs/SYSTEM_KEY_PROVIDER.md`
 - `docs/DURABLE_SESSION_AUTHORITY.md`
+- `docs/PLATFORM_STORAGE_PATHS.md`
 
 Still pending:
 
 - concrete Windows Credential Manager / macOS Keychain / Linux Secret Service adapter;
-- application-private root-directory discovery/installation per OS;
-- production CLI/bootstrap wiring that combines the platform root, encrypted observation store, system key provider, and durable authority repository;
+- production CLI/bootstrap wiring that combines the resolved platform root, encrypted observation store, system key provider, and durable authority repository;
 - explicit single-helper/profile locking or equivalent coordination before multiple helper processes could ever become authoritative for the same profile.
 
 Do not wire a plaintext testing codec or generic secret-store fallback into normal recording merely to make the file backend usable.
@@ -248,6 +250,8 @@ User presses Start
   |                                                      +--> browser request denied -> remain IDLE
   |
   +-- native helper available and protocol compatible? -- no --> setup/repair; remain IDLE
+  |
+  +-- platform-local managed storage root available? ---- no --> remain IDLE
   |
   +-- production-safe durable store/key path ready? ----- no --> setup/repair; remain IDLE
   |
@@ -334,7 +338,7 @@ Independent cheap jobs run in parallel:
 - TypeScript production-extension build/conformance tests;
 - JSON schema syntax/shape validation.
 
-The Go production-helper job includes durable observation-store, encrypted-key lifecycle, and durable-authority tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, authenticated tamper rejection, key rotation, key-state corruption, restart `RECORDING`/`PAUSED` -> `INTERRUPTED`, authority persistence failures, session deletion, and POSIX access modes where applicable.
+The Go production-helper job includes durable observation-store, encrypted-key lifecycle, durable-authority, and platform-path tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, authenticated tamper rejection, key rotation, key-state corruption, restart `RECORDING`/`PAUSED` -> `INTERRUPTED`, authority persistence failures, platform base selection, managed-directory containment/symlink rejection, session deletion, and POSIX access modes where applicable.
 
 As production modules are added, their tests join the appropriate production job rather than replacing the independent reference oracles.
 
@@ -362,12 +366,13 @@ See `docs/EVALUATION.md`.
 3. **Native protocol client abstraction** — completed browser-independent production baseline.
 4. **Observation validation + store interface** — completed production baseline.
 5. **M1 durable event storage** — per-session framed `FileStore`, AES-256-GCM record codec, and system-key lifecycle core implemented/tested; native OS secret-store adapter remains active platform work.
-6. **Durable helper session authority / restart recovery** — production baseline implemented/tested; final platform-root/bootstrap wiring remains pending.
-7. **Extension UI + permission flow** — wire fixed onboarding semantics.
-8. **Browser event collector** — navigation/visibility first.
-9. **Capture adapter** — integrate #8 findings; normal HTML first.
-10. **End-to-end Chrome/Edge session** — Start -> record -> Stop -> inspect.
-11. **M1 privacy/restart/adversarial verification**.
+6. **Durable helper session authority / restart recovery** — production baseline implemented/tested.
+7. **Platform-local storage path policy** — resolver/layout validation implemented/tested; production bootstrap connection remains pending.
+8. **Extension UI + permission flow** — wire fixed onboarding semantics.
+9. **Browser event collector** — navigation/visibility first.
+10. **Capture adapter** — integrate #8 findings; normal HTML first.
+11. **End-to-end Chrome/Edge session** — Start -> record -> Stop -> inspect.
+12. **M1 privacy/restart/adversarial verification**.
 
 ## 9. M1 stop conditions
 
@@ -383,6 +388,7 @@ Do not claim M1 complete if any of the following remains true:
 - production helper can enter `RECORDING` without durable authority persistence;
 - unfinished session state can silently recover as `RECORDING` after helper/OS restart;
 - authority journal corruption is silently repaired beyond an incomplete trailing write;
+- durable browsing data can fall back to cwd/temp/roaming storage because the platform-local root is unavailable;
 - browser restart/recovery semantics contradict the product lifecycle;
 - #8 empirical tests contradict the selected capture adapter behavior;
 - a session cannot be inspected without an LLM/network connection.
