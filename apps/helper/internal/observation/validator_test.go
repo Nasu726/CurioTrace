@@ -20,13 +20,13 @@ func TestDecodeAndValidateAcceptsSafeDOMObservation(t *testing.T) {
 func TestBlockedObservationRejectsSourceAndContent(t *testing.T) {
 	_, err := DecodeAndValidate(validEventJSON(`"capture_mode":"blocked","source":{"url":"https://secret.test/"},"payload":{"reason":"excluded","text":"must-not-persist"}`))
 	assertValidationContains(t, err, "BLOCKED_SOURCE_FORBIDDEN")
-	assertValidationContains(t, err, "FORBIDDEN_PAYLOAD_FIELD")
+	assertValidationContains(t, err, "BLOCKED_CONTENT_FORBIDDEN")
 }
 
 func TestFingerprintOnlyRejectsContent(t *testing.T) {
 	_, err := DecodeAndValidate(validEventJSON(`"capture_mode":"fingerprint_only","payload":{"visual_fingerprint":"abc","ocr_text":"secret"}`))
 	assertValidationContains(t, err, "FINGERPRINT_ONLY_CONTENT_FORBIDDEN")
-	assertValidationContains(t, err, "FORBIDDEN_PAYLOAD_FIELD:ocr_text")
+	assertValidationContains(t, err, "UNEXPECTED_MODE_PAYLOAD_FIELD:ocr_text")
 }
 
 func TestRedactedVisualRequiresPolicyVersion(t *testing.T) {
