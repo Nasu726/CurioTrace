@@ -20,15 +20,15 @@ const (
 var ErrInvalidTransition = errors.New("invalid session state transition")
 
 type Snapshot struct {
-	State State
-	SessionID string
+	State          State
+	SessionID      string
 	RecordingEpoch uint64
 }
 
 type Authority struct {
-	mu sync.Mutex
-	state State
-	sessionID string
+	mu             sync.Mutex
+	state          State
+	sessionID      string
 	recordingEpoch uint64
 }
 
