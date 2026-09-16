@@ -4,16 +4,24 @@ import {
   type HostPermissionPort,
   type SessionStartResult,
 } from "./permission-controller.js";
+import {
+  ProtocolSessionControlPort,
+  type SessionControlAction,
+  type SessionControlResult,
+} from "./protocol-session-control.js";
 import { ProtocolSessionStartPort } from "./protocol-session-start.js";
 
 export type BackgroundRequest =
   | { kind: "curiotrace.helper.ensure-connected" }
   | { kind: "curiotrace.session.start" }
+  | { kind: "curiotrace.session.pause" }
+  | { kind: "curiotrace.session.resume" }
+  | { kind: "curiotrace.session.stop" }
   | { kind: "curiotrace.state.get" };
 
 export type BackgroundResponse =
   | { accepted: true; reason: "OK"; state?: unknown }
-  | { accepted: false; reason: string };
+  | { accepted: false; reason: string; state?: unknown };
 
 export interface ExtensionMessageSender {
   id?: string;
@@ -26,6 +34,7 @@ export class BackgroundSessionBroker {
   #permissions: Pick<HostPermissionPort, "contains">;
   #helper: HelperConnectionController;
   #startPort: ProtocolSessionStartPort;
+  #controlPort: ProtocolSessionControlPort;
 
   constructor({
     runtimeId,
@@ -42,10 +51,8 @@ export class BackgroundSessionBroker {
     this.#runtimeId = runtimeId;
     this.#permissions = permissions;
     this.#helper = helper;
-    this.#startPort = new ProtocolSessionStartPort({
-      protocol: helper.protocol,
-      transport: helper,
-    });
+    this.#startPort = new ProtocolSessionStartPort({ protocol: helper.protocol, transport: helper });
+    this.#controlPort = new ProtocolSessionControlPort({ protocol: helper.protocol, transport: helper });
   }
 
   async handle(request: unknown, sender: ExtensionMessageSender): Promise<BackgroundResponse> {
@@ -61,12 +68,14 @@ export class BackgroundSessionBroker {
         return this.#ensureHelperConnected();
       case "curiotrace.session.start":
         return this.#startSession();
+      case "curiotrace.session.pause":
+        return this.#control("pause");
+      case "curiotrace.session.resume":
+        return this.#control("resume");
+      case "curiotrace.session.stop":
+        return this.#control("stop");
       case "curiotrace.state.get":
-        return {
-          accepted: true,
-          reason: "OK",
-          state: this.#helper.protocol.snapshot,
-        };
+        return this.#state();
       default:
         return { accepted: false, reason: "UNKNOWN_BACKGROUND_REQUEST" };
     }
@@ -87,8 +96,43 @@ export class BackgroundSessionBroker {
     if (!connected.accepted) {
       return connected;
     }
+    return normalize(await this.#startPort.startSession(), this.#helper.protocol.snapshot);
+  }
 
-    return normalizeStart(await this.#startPort.startSession());
+  async #control(action: SessionControlAction): Promise<BackgroundResponse> {
+    const connected = await this.#ensureHelperConnected();
+    if (!connected.accepted) {
+      return connected;
+    }
+
+    let result: SessionControlResult;
+    switch (action) {
+      case "pause":
+        result = await this.#controlPort.pause();
+        break;
+      case "resume":
+        result = await this.#controlPort.resume();
+        break;
+      case "stop":
+        result = await this.#controlPort.stop();
+        break;
+    }
+    return normalize(result, this.#helper.protocol.snapshot);
+  }
+
+  async #state(): Promise<BackgroundResponse> {
+    const connected = await this.#ensureHelperConnected();
+    if (!connected.accepted) {
+      return {
+        ...connected,
+        state: this.#helper.protocol.snapshot,
+      };
+    }
+    return {
+      accepted: true,
+      reason: "OK",
+      state: this.#helper.protocol.snapshot,
+    };
   }
 
   async #ensureHelperConnected(): Promise<BackgroundResponse> {
@@ -113,11 +157,14 @@ export class BackgroundSessionBroker {
   }
 }
 
-function normalizeStart(result: SessionStartResult): BackgroundResponse {
+function normalize(
+  result: SessionStartResult | SessionControlResult,
+  state: unknown,
+): BackgroundResponse {
   if (result.accepted) {
-    return { accepted: true, reason: "OK" };
+    return { accepted: true, reason: "OK", state };
   }
-  return { accepted: false, reason: result.reason };
+  return { accepted: false, reason: result.reason, state };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
