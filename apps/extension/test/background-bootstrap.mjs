@@ -10,7 +10,11 @@ class FakeEvent {
   listeners = [];
 
   addListener(listener) {
-    this.listeners.push(listener);
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  removeListener(listener) {
+    this.listeners = this.listeners.filter((candidate) => candidate !== listener);
   }
 
   emit(...args) {
@@ -29,7 +33,9 @@ class FakePort {
     this.onPost?.(message);
   }
 
-  disconnect() {}
+  disconnect() {
+    this.onDisconnect.emit();
+  }
 
   emitMessage(message) {
     this.onMessage.emit(message);
@@ -69,6 +75,36 @@ function extensionSender(runtimeId = "ext_1") {
   return { id: runtimeId, url: "chrome-extension://abc/popup.html" };
 }
 
+function recordingObserver() {
+  return {
+    calls: [],
+    suspensions: 0,
+    async syncCurrentActiveView(reason) {
+      this.calls.push(reason);
+      return { accepted: true, reason: "OK" };
+    },
+    suspendObservation() {
+      this.suspensions += 1;
+    },
+  };
+}
+
+function browserCaptureApis() {
+  return {
+    tabs: {
+      onActivated: new FakeEvent(),
+      onUpdated: new FakeEvent(),
+      onRemoved: new FakeEvent(),
+      async get() { throw new Error("unused"); },
+      async query() { return []; },
+    },
+    windows: {
+      WINDOW_ID_NONE: -1,
+      onFocusChanged: new FakeEvent(),
+    },
+  };
+}
+
 test("background broker rejects content-script and foreign senders", async () => {
   const helper = new HelperConnectionController({
     runtime: { connectNative: () => { throw new Error("must not connect"); } },
@@ -78,6 +114,7 @@ test("background broker rejects content-script and foreign senders", async () =>
     runtimeId: "ext_1",
     permissions: { contains: async () => true },
     helper,
+    recordingObserver: recordingObserver(),
   });
 
   const contentScript = await broker.handle(
@@ -108,6 +145,7 @@ test("background broker rechecks host permission before connecting helper", asyn
     runtimeId: "ext_1",
     permissions: { contains: async () => false },
     helper,
+    recordingObserver: recordingObserver(),
   });
 
   const response = await broker.handle({ kind: "curiotrace.session.start" }, extensionSender());
@@ -115,7 +153,7 @@ test("background broker rechecks host permission before connecting helper", asyn
   assert.equal(connects, 0);
 });
 
-test("background broker connects, handshakes, and forwards one helper Start", async () => {
+test("background broker connects, handshakes, snapshots, and forwards one helper Start", async () => {
   const port = new FakePort();
   port.onPost = (message) =>
     queueMicrotask(() => {
@@ -132,10 +170,12 @@ test("background broker connects, handshakes, and forwards one helper Start", as
     hostName: NATIVE_HOST_NAME,
     timeoutMs: 100,
   });
+  const observer = recordingObserver();
   const broker = new BackgroundSessionBroker({
     runtimeId: "ext_1",
     permissions: { contains: async () => true },
     helper,
+    recordingObserver: observer,
   });
 
   const response = await broker.handle({ kind: "curiotrace.session.start" }, extensionSender());
@@ -145,12 +185,33 @@ test("background broker connects, handshakes, and forwards one helper Start", as
   assert.equal(response.state.authority.sessionId, "ses_1");
   assert.equal(response.state.authority.recordingEpoch, 1);
   assert.equal(response.state.authority.captureAllowed, true);
+  assert.deepEqual(observer.calls, ["session_start"]);
   assert.equal(connects, 1);
   assert.deepEqual(port.sent.map((message) => message.kind), ["hello", "session.start"]);
   assert.equal(helper.protocol.authority.snapshot.captureAllowed, true);
 });
 
-test("installBackground registers async own-extension message handler", async () => {
+test("recording activation without collector fails closed after helper Start", async () => {
+  const port = new FakePort();
+  port.onPost = (message) => queueMicrotask(() => port.emitMessage(message.kind === "hello" ? helloAck(message) : startAck(message)));
+  const helper = new HelperConnectionController({
+    runtime: { connectNative: () => port },
+    hostName: NATIVE_HOST_NAME,
+    timeoutMs: 100,
+  });
+  const broker = new BackgroundSessionBroker({
+    runtimeId: "ext_1",
+    permissions: { contains: async () => true },
+    helper,
+  });
+
+  const response = await broker.handle({ kind: "curiotrace.session.start" }, extensionSender());
+  assert.equal(response.accepted, false);
+  assert.equal(response.reason, "COLLECTOR_NOT_CONFIGURED");
+  assert.equal(helper.protocol.authority.snapshot.captureAllowed, false);
+});
+
+test("installBackground leaves browser observation listeners unregistered while idle", async () => {
   const port = new FakePort();
   port.onPost = (message) => queueMicrotask(() => port.emitMessage(helloAck(message)));
   const onMessage = new FakeEvent();
@@ -166,8 +227,14 @@ test("installBackground registers async own-extension message handler", async ()
     async contains() { return true; },
     async request() { return true; },
   };
-  const installed = installBackground({ runtime, permissions });
+  const captureApis = browserCaptureApis();
+  const installed = installBackground({ runtime, permissions, ...captureApis });
   assert.equal(onMessage.listeners.length, 1);
+  assert.equal(captureApis.tabs.onActivated.listeners.length, 0);
+  assert.equal(captureApis.tabs.onUpdated.listeners.length, 0);
+  assert.equal(captureApis.tabs.onRemoved.listeners.length, 0);
+  assert.equal(captureApis.windows.onFocusChanged.listeners.length, 0);
+  assert.equal(installed.browserEvents.active, false);
   assert.equal(installed.helper.connected, false);
 
   const response = await new Promise((resolve) => {
@@ -180,6 +247,8 @@ test("installBackground registers async own-extension message handler", async ()
   });
   assert.deepEqual(response, { accepted: true, reason: "OK" });
   assert.equal(installed.helper.connected, true);
+  assert.equal(installed.browserEvents.active, false);
+  assert.equal(captureApis.tabs.onUpdated.listeners.length, 0);
 });
 
 test("manifest keeps broad hosts optional and supports Chrome/Firefox MV3 backgrounds", async () => {
