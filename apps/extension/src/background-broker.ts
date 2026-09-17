@@ -33,6 +33,7 @@ export interface RecordingActivationObserver {
   syncCurrentActiveView(
     reason: "session_start" | "session_resume",
   ): Promise<{ accepted: true; reason: "OK" } | { accepted: false; reason: string }>;
+  suspendObservation(): void;
 }
 
 export class BackgroundSessionBroker {
@@ -114,6 +115,12 @@ export class BackgroundSessionBroker {
   }
 
   async #control(action: SessionControlAction): Promise<BackgroundResponse> {
+    if (action === "pause" || action === "stop") {
+      // Stop browser event delivery at the user-control boundary, before any
+      // async helper round trip can expose additional URL/title metadata.
+      this.#recordingObserver?.suspendObservation();
+    }
+
     const connected = await this.#ensureHelperConnected();
     if (!connected.accepted) {
       return connected;
@@ -153,6 +160,7 @@ export class BackgroundSessionBroker {
     }
     const observed = await this.#recordingObserver.syncCurrentActiveView(reason);
     if (!observed.accepted) {
+      this.#recordingObserver.suspendObservation();
       this.#helper.disconnect();
       return {
         accepted: false,
