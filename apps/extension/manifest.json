@@ -18,7 +18,8 @@
     "type": "module"
   },
   "action": {
-    "default_title": "CurioTrace"
+    "default_title": "CurioTrace",
+    "default_popup": "popup.html"
   },
   "browser_specific_settings": {
     "gecko": {
