@@ -20,7 +20,7 @@ It does **not** extract page body text, DOM semantic units, screenshots, OCR, fo
 
 Browser observation listeners are **not attached to the browser while CurioTrace is IDLE, PAUSED, FINISHED, INTERRUPTED, or disconnected**. `BrowserObservationEventGate` keeps the collector's logical listeners dormant and attaches them to `tabs`/`windows` only after helper-authoritative Start/Resume succeeds.
 
-Pause/Stop requests detach the browser listeners synchronously before the Native Messaging control round trip. Helper disconnect, observation rejection, or collector failure also detaches them immediately. This prevents ordinary URL/title event arguments from being delivered to CurioTrace outside the authorized recording interval, rather than merely receiving and discarding them later.
+Pause/Stop requests detach the browser listeners synchronously before the Native Messaging control round trip. Helper disconnect, observation rejection, collector failure, or required host-permission revocation also detaches them immediately. This prevents ordinary URL/title event arguments from being delivered to CurioTrace outside the authorized recording interval, rather than merely receiving and discarding them later.
 
 While listeners are active, every event additionally calls `CaptureAuthority.beginCapture()` before any explicit browser metadata lookup. Async work revalidates the capture token before `tabs.get()`/`tabs.query()` results are used and again when the durable event is materialized. Pause/Stop/epoch change/disconnect therefore invalidates already-queued work.
 
@@ -29,7 +29,7 @@ The listener gate and capture token are intentionally separate defenses:
 - listener registration enforces the product's coarse Start/Pause/Stop acquisition boundary;
 - capture authority prevents stale/in-flight async work from crossing a session/epoch boundary.
 
-## Start and Resume snapshots
+## Start, Resume, and reconnect snapshots
 
 A session cannot be reported as successfully started/resumed merely because the helper accepted the lifecycle transition.
 
@@ -43,7 +43,22 @@ After helper-authoritative Start/Resume:
 
 Start clears prior-session in-memory view continuity. Resume intentionally creates a fresh view segment so the paused interval cannot be treated as continuous exposure.
 
-If the collector is missing or the initial snapshot fails in a way that cannot be durably represented, browser listeners are detached, the helper is disconnected, and Start/Resume reports failure instead of continuing a partial recording.
+If a fresh helper handshake reports that the same helper-authoritative session is already `RECORDING` (for example after extension/background recovery), CurioTrace first rechecks the complete required host-permission set. Only if it is still granted does the browser collector reactivate and create a fresh current-view snapshot. M1 deliberately reuses the Resume snapshot semantics for this recovery path so an unobserved extension interval is never represented as continuous exposure.
+
+If the collector is missing or the initial/recovery snapshot fails in a way that cannot be durably represented, browser listeners are detached, the helper is disconnected, and Start/Resume/recovery reports failure instead of continuing a partial recording.
+
+## Required host-permission lifetime
+
+The broad HTTP/HTTPS host permission is not treated as a one-time onboarding fact. It is part of current capture authority.
+
+- Start rechecks the complete required origin set before helper `session.start`.
+- Resume rechecks it before reconnecting/sending `session.resume`.
+- recovery from a fresh helper handshake that reports `RECORDING` rechecks it before browser listeners are restored.
+- `permissions.onRemoved` is monitored. Removal of required broad host access synchronously suspends local capture and detaches browser listeners, then disconnects Native Messaging.
+
+The native helper exits when its Native Messaging stdin reaches EOF. Therefore disconnecting after permission revocation terminates the current helper process; the next launch applies the durable unfinished-session recovery rule (`RECORDING`/`PAUSED` -> `INTERRUPTED` with a fresh epoch) rather than silently continuing under revoked access.
+
+Regranting browser permission does not itself resume a session. An explicit Resume remains required.
 
 ## Privacy precedence
 
@@ -100,7 +115,8 @@ The M1 baseline uses ordinary WebExtension APIs:
 - `tabs.onRemoved`;
 - `windows.onFocusChanged`;
 - `tabs.get()` only after capture authority is confirmed;
-- `tabs.query({active: true, lastFocusedWindow: true})` for Start/Resume snapshots.
+- `tabs.query({active: true, lastFocusedWindow: true})` for Start/Resume/recovery snapshots;
+- `permissions.onRemoved` for runtime revocation of required host access.
 
 The existing broad HTTP/HTTPS host permission supplies access to allowed URL/title metadata. This collector does not add an install-time `tabs` permission.
 
@@ -114,4 +130,5 @@ Still outside this PR/collector boundary:
 - persistent user-exclusion storage/UI wiring;
 - OS lock/suspend integration;
 - exact browser-specific behavior verification in Chrome/Edge/Firefox;
+- dedicated user-facing Resume permission regrant UX beyond the current fail-closed `HOST_PERMISSION_REQUIRED` response;
 - #8 architecture measurements and browser-store disclosure work in #22.
