@@ -29,9 +29,17 @@ Responsibilities:
 - show helper unavailable/interrupted state;
 - expose current recording/exclusion state visibly enough for M1 testing.
 
+Production baseline:
+
+- toolbar popup lifecycle controls are implemented;
+- the first-Start explanation precedes the browser permission prompt;
+- a denied/missing host permission cannot send helper `session.start`;
+- the background rechecks host permission before Start even if the popup/controller already checked it.
+
 Normative references:
 
 - `docs/PERMISSION_ONBOARDING.md`
+- `docs/M1_POPUP_CONTROLS.md`
 - `docs/PRODUCT_SPEC.md`
 
 ### B. Extension native-protocol client
@@ -48,6 +56,8 @@ Responsibilities:
 Production baseline:
 
 - `apps/extension/src/protocol-client.ts`
+- `apps/extension/src/native-messaging-transport.ts`
+- `apps/extension/src/helper-connection.ts`
 
 Independent reference oracle:
 
@@ -56,6 +66,7 @@ Independent reference oracle:
 Normative reference:
 
 - `docs/NATIVE_HELPER_PROTOCOL.md`
+- `docs/NATIVE_MESSAGING_TRANSPORT.md`
 
 ### C. Extension capture-authority guard
 
@@ -86,7 +97,30 @@ Responsibilities:
 - content-script lifecycle while `RECORDING`;
 - privacy/exclusion gate before capture work.
 
+Production baseline now includes the navigation/visibility layer:
+
+- `apps/extension/src/navigation-visibility-collector.ts` produces navigation, visibility, privacy-decision, and gap observations;
+- `apps/extension/src/browser-observation-event-gate.ts` attaches raw browser listeners only during helper-authorized `RECORDING` intervals;
+- Pause/Stop detach browser listeners synchronously before the Native Messaging round trip and suspend local capture authority so queued work cannot cross the control boundary;
+- helper disconnect/observation rejection/collector failure also detaches browser listeners;
+- private/unknown-private/browser-internal/user-excluded views never persist source URL/title;
+- allowed HTTP/HTTPS source URLs remove URL credentials and syntactically redact obvious credential/token/password/secret/API-key/session/OAuth parameters before persistence;
+- runtime tab/window IDs remain transient implementation identifiers and are not durable observation identity;
+- Start/Resume create an explicit current-active-view snapshot; Resume starts a fresh view segment after the exposure break;
+- window focus loss remains an `unknown` exposure-visibility fact rather than an inference that the page became invisible.
+
+Still pending in this layer:
+
+- selection/copy observations;
+- persistent user exclusion storage/UI;
+- OS lock/suspend signal integration;
+- SPA navigation detail beyond browser-observable tab URL changes.
+
 M1 should prefer small typed event producers over one monolithic service worker.
+
+Normative implementation note:
+
+- `docs/M1_NAVIGATION_VISIBILITY_COLLECTOR.md`
 
 ### E. Capture adapter
 
@@ -131,6 +165,14 @@ Extension-side builder responsibilities:
 - normalize explicit gap/error/privacy result states;
 - enforce bounded payloads before transport where practical;
 - never turn unknown/missing data into fabricated content.
+
+Production extension baseline:
+
+- `apps/extension/src/observation-event.ts` creates bounded identity/timing/view envelopes for the currently implemented browser event classes;
+- browser-event timestamps are captured at event receipt time before asynchronous tab lookups;
+- `apps/extension/src/protocol-observation-submit.ts` sends only capture-token-authorized observations and consumes helper acknowledgements;
+- any rejected durable observation is terminal for the current browser-side recording path rather than silently dropping events and continuing an incomplete trace;
+- a helper-authoritative rejection state such as storage failure -> `INTERRUPTED` is applied before browser cleanup/disconnect.
 
 Helper-side validation responsibilities:
 
@@ -263,24 +305,27 @@ User presses Start
   |
   +-- extension capture guard applies helper authority
   |
-  +-- enable/register recording-scoped collectors
+  +-- attach recording-scoped browser listeners
   |
-  `-- recording UI becomes active
+  +-- persist current-active-view navigation/privacy + visibility snapshot
+  |
+  `-- recording UI becomes active only if the snapshot path succeeds
 ```
 
-Do not mark UI as recording until helper authority is established.
+Do not mark UI as recording until helper authority and the initial observable-view snapshot path are established. A durably represented explicit gap may satisfy the snapshot path; silent loss may not.
 
 ## 4. Pause/Stop flow and asynchronous races
 
-Pause/Stop is helper-authoritative.
+Pause/Stop is helper-authoritative, but browser acquisition is shut off locally at the user-control boundary.
 
 1. user requests Pause/Stop;
-2. extension immediately enters a local `capture_requested_off` guard so it does not initiate new expensive capture work while the control round-trip is pending;
-3. helper validates transition and increments epoch;
-4. helper commits the non-recording authority snapshot; if persistence fails while the previous state was `RECORDING`, helper revokes in-memory authority to `INTERRUPTED` and returns the current safe state;
-5. extension applies returned non-recording state/new epoch;
-6. content observers are disabled/unregistered where practical;
-7. any in-flight result holding the old capture token fails token validation and is discarded before observation construction/transport.
+2. extension immediately suspends local capture authority and detaches raw browser observation listeners **before** awaiting any helper control round trip;
+3. already-queued async work now holds an invalid capture token and is discarded before browser-result use/event materialization;
+4. helper validates transition and increments epoch;
+5. helper commits the non-recording authority snapshot; if persistence fails while the previous state was `RECORDING`, helper revokes in-memory authority to `INTERRUPTED` and returns the current safe state;
+6. extension applies returned non-recording state/new epoch;
+7. browser listeners remain detached until an explicit helper-authorized Resume succeeds;
+8. Resume reattaches listeners and creates a fresh view segment/current-view snapshot so the paused interval cannot be interpreted as continuous exposure.
 
 A control-message failure must not make the extension continue optimistically. If authority becomes uncertain, fail closed and surface Interrupted/helper-error state.
 
@@ -288,6 +333,7 @@ A control-message failure must not make the extension continue optimistically. I
 
 ```text
 Native port disconnects
+  -> detach raw browser observation listeners immediately
   -> extension capture guard invalidates connection generation immediately
   -> stop initiating observations
   -> discard in-flight raw/high-fidelity material
@@ -338,6 +384,8 @@ Independent cheap jobs run in parallel:
 - TypeScript production-extension build/conformance tests;
 - JSON schema syntax/shape validation.
 
+The TypeScript production-extension job covers permission/start gating, helper-authoritative lifecycle controls, Native Messaging disconnect/timeout behavior, capture-token races, observation acknowledgement failure semantics, recording-only browser listener attachment, navigation/visibility/privacy event production, URL secret sanitization, private/internal non-leakage, Start/Resume view snapshots, and Pause/Resume/disconnect listener lifecycle.
+
 The Go production-helper job includes durable observation-store, encrypted-key lifecycle, durable-authority, and platform-path tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, authenticated tamper rejection, key rotation, key-state corruption, restart `RECORDING`/`PAUSED` -> `INTERRUPTED`, authority persistence failures, platform base selection, managed-directory containment/symlink rejection, session deletion, and POSIX access modes where applicable.
 
 As production modules are added, their tests join the appropriate production job rather than replacing the independent reference oracles.
@@ -350,6 +398,7 @@ As production modules are added, their tests join the appropriate production job
 - PDF/restricted surfaces;
 - screenshot timing/rate;
 - helper Native Messaging end-to-end;
+- verify raw browser listeners are absent before Start and throughout Pause/Idle;
 - Pause/Stop/disconnect while screenshot/capture is in flight;
 - helper restart while a session was durably `RECORDING` or `PAUSED`, confirming handshake exposes only `INTERRUPTED` with a fresh epoch.
 
@@ -368,8 +417,8 @@ See `docs/EVALUATION.md`.
 5. **M1 durable event storage** — per-session framed `FileStore`, AES-256-GCM record codec, and system-key lifecycle core implemented/tested; native OS secret-store adapter remains active platform work.
 6. **Durable helper session authority / restart recovery** — production baseline implemented/tested.
 7. **Platform-local storage path policy** — resolver/layout validation implemented/tested; production bootstrap connection remains pending.
-8. **Extension UI + permission flow** — wire fixed onboarding semantics.
-9. **Browser event collector** — navigation/visibility first.
+8. **Extension UI + permission flow** — production popup/onboarding/lifecycle baseline implemented/tested.
+9. **Browser event collector** — navigation/visibility/privacy/gap baseline implemented/tested in CI; real-browser verification, interaction capture, persistent exclusions, and OS lock/suspend remain pending.
 10. **Capture adapter** — integrate #8 findings; normal HTML first.
 11. **End-to-end Chrome/Edge session** — Start -> record -> Stop -> inspect.
 12. **M1 privacy/restart/adversarial verification**.
@@ -379,8 +428,10 @@ See `docs/EVALUATION.md`.
 Do not claim M1 complete if any of the following remains true:
 
 - host permission refusal can still create a recording session;
-- helper disconnect leaves capture running;
+- raw URL-bearing browser observation listeners remain attached before Start or while IDLE/PAUSED/FINISHED/INTERRUPTED;
+- helper disconnect leaves capture running or browser observation listeners attached;
 - old-epoch async results can be persisted;
+- a rejected durable observation can be silently dropped while browser recording continues;
 - unredacted raster crosses the extension -> helper boundary on the normal semantic path;
 - blocked/private/editable canaries reach durable data;
 - unvalidated protocol data can reach the durable store through an ordinary production API;
