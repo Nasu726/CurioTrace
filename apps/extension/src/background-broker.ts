@@ -93,14 +93,9 @@ export class BackgroundSessionBroker {
   }
 
   async #startSession(): Promise<BackgroundResponse> {
-    let granted: boolean;
-    try {
-      granted = await this.#permissions.contains(REQUIRED_HOST_ORIGINS);
-    } catch {
-      return { accepted: false, reason: "PERMISSION_CHECK_FAILED" };
-    }
-    if (!granted) {
-      return { accepted: false, reason: "HOST_PERMISSION_REQUIRED" };
+    const permission = await this.#requiredHostPermissionStatus();
+    if (!permission.accepted) {
+      return permission;
     }
 
     const connected = await this.#ensureHelperConnected();
@@ -121,7 +116,17 @@ export class BackgroundSessionBroker {
       this.#recordingObserver?.suspendObservation();
     }
 
-    const connected = await this.#ensureHelperConnected();
+    if (action === "resume") {
+      const permission = await this.#requiredHostPermissionStatus();
+      if (!permission.accepted) {
+        return permission;
+      }
+    }
+
+    // A Pause/Stop/Resume command must not cause a newly connected helper that
+    // reports RECORDING to reacquire browser observations before the requested
+    // control transition has been applied.
+    const connected = await this.#ensureHelperConnected({ recoverRecording: false });
     if (!connected.accepted) {
       return connected;
     }
@@ -190,13 +195,41 @@ export class BackgroundSessionBroker {
     };
   }
 
-  async #ensureHelperConnected(): Promise<BackgroundResponse> {
+  async #ensureHelperConnected(
+    { recoverRecording = true }: { recoverRecording?: boolean } = {},
+  ): Promise<BackgroundResponse> {
     if (this.#helper.connected) {
       return { accepted: true, reason: "OK" };
     }
     const result = await this.#helper.connect();
     if (!result.accepted) {
       return { accepted: false, reason: result.reason };
+    }
+
+    if (recoverRecording && this.#helper.protocol.snapshot.authority.sessionState === "RECORDING") {
+      const permission = await this.#requiredHostPermissionStatus();
+      if (!permission.accepted) {
+        this.#recordingObserver?.suspendObservation();
+        this.#helper.disconnect();
+        return permission;
+      }
+      // A background/service-worker recovery creates a fresh observation
+      // segment. Reusing the resume snapshot semantics is conservative: the
+      // unobserved interval is never treated as continuous exposure.
+      return this.#finishRecordingActivation("session_resume");
+    }
+    return { accepted: true, reason: "OK" };
+  }
+
+  async #requiredHostPermissionStatus(): Promise<BackgroundResponse> {
+    let granted: boolean;
+    try {
+      granted = await this.#permissions.contains(REQUIRED_HOST_ORIGINS);
+    } catch {
+      return { accepted: false, reason: "PERMISSION_CHECK_FAILED" };
+    }
+    if (!granted) {
+      return { accepted: false, reason: "HOST_PERMISSION_REQUIRED" };
     }
     return { accepted: true, reason: "OK" };
   }
