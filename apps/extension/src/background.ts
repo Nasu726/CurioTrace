@@ -1,10 +1,16 @@
 import { BackgroundSessionBroker, type ExtensionMessageSender } from "./background-broker.js";
 import { HelperConnectionController } from "./helper-connection.js";
 import {
+  NavigationVisibilityCollector,
+  type BrowserTabsAPI,
+  type BrowserWindowsAPI,
+} from "./navigation-visibility-collector.js";
+import {
   WebExtensionHostPermissionPort,
   type WebExtensionPermissionsAPI,
 } from "./permission-controller.js";
 import type { NativePortLike, NativeRuntimeLike } from "./native-messaging-transport.js";
+import { ProtocolObservationPort } from "./protocol-observation-submit.js";
 
 export const NATIVE_HOST_NAME = "uk.nasu.curiotrace";
 
@@ -27,6 +33,8 @@ export interface BackgroundRuntimeAPI extends NativeRuntimeLike {
 export interface BackgroundExtensionAPI {
   runtime: BackgroundRuntimeAPI;
   permissions: WebExtensionPermissionsAPI;
+  tabs: BrowserTabsAPI;
+  windows: BrowserWindowsAPI;
 }
 
 export function installBackground(
@@ -38,10 +46,24 @@ export function installBackground(
     hostName,
   });
   const permissions = new WebExtensionHostPermissionPort(api.permissions);
+  const observations = new ProtocolObservationPort({
+    protocol: helper.protocol,
+    transport: helper,
+  });
+  const collector = new NavigationVisibilityCollector({
+    tabs: api.tabs,
+    windows: api.windows,
+    authority: helper.protocol.authority,
+    observations,
+    onFatalError: () => helper.disconnect(),
+  });
+  collector.install();
+
   const broker = new BackgroundSessionBroker({
     runtimeId: api.runtime.id,
     permissions,
     helper,
+    recordingObserver: collector,
   });
 
   api.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -52,7 +74,7 @@ export function installBackground(
     return true;
   });
 
-  return Object.freeze({ helper, broker });
+  return Object.freeze({ helper, broker, collector });
 }
 
 function detectExtensionAPI(): BackgroundExtensionAPI | null {
@@ -61,7 +83,17 @@ function detectExtensionAPI(): BackgroundExtensionAPI | null {
     chrome?: BackgroundExtensionAPI;
   };
   const api = scope.browser ?? scope.chrome;
-  if (!api?.runtime?.id || !api.runtime.onMessage || !api.permissions) {
+  if (
+    !api?.runtime?.id ||
+    !api.runtime.onMessage ||
+    !api.permissions ||
+    !api.tabs ||
+    !api.tabs.onActivated ||
+    !api.tabs.onUpdated ||
+    !api.tabs.onRemoved ||
+    !api.windows ||
+    !api.windows.onFocusChanged
+  ) {
     return null;
   }
   return api;
