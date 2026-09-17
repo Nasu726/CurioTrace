@@ -139,8 +139,7 @@ export class NavigationPrivacyGate {
       };
     }
 
-    parsed.username = "";
-    parsed.password = "";
+    sanitizeSourceUrl(parsed);
     const safeUrl = parsed.toString();
     if (safeUrl.length > 8192) {
       return { allowed: true, sourceOmittedReason: "URL_TOO_LONG" };
@@ -169,9 +168,60 @@ function parseHttpUrl(rawUrl: string): URL | null {
 
 function comparableUrl(url: URL): string {
   const copy = new URL(url.toString());
-  copy.username = "";
-  copy.password = "";
+  sanitizeSourceUrl(copy);
   return copy.toString();
+}
+
+function sanitizeSourceUrl(url: URL): void {
+  url.username = "";
+  url.password = "";
+
+  const queryKeys = [...url.searchParams.keys()];
+  for (const key of queryKeys) {
+    if (isSensitiveParameterName(key)) {
+      url.searchParams.set(key, "__redacted__");
+    }
+  }
+
+  const fragment = url.hash.slice(1);
+  if (fragment && fragmentContainsSensitiveParameter(fragment)) {
+    url.hash = "";
+  }
+}
+
+function isSensitiveParameterName(rawName: string): boolean {
+  const name = rawName.trim().toLowerCase().replace(/[.-]/g, "_");
+  if (SENSITIVE_PARAMETER_NAMES.has(name)) {
+    return true;
+  }
+  return (
+    name.endsWith("_token") ||
+    name.endsWith("_secret") ||
+    name.endsWith("_password") ||
+    name.endsWith("_api_key") ||
+    name.endsWith("_session_id")
+  );
+}
+
+function fragmentContainsSensitiveParameter(fragment: string): boolean {
+  const candidates = fragment.split(/[?&#;]/g);
+  for (const candidate of candidates) {
+    const separator = candidate.indexOf("=");
+    if (separator <= 0) {
+      continue;
+    }
+    let key = candidate.slice(0, separator);
+    try {
+      key = decodeURIComponent(key);
+    } catch {
+      // Keep the undecoded key. A malformed fragment is not allowed to make
+      // sanitization throw and accidentally persist the original fragment.
+    }
+    if (isSensitiveParameterName(key)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function normalizeDomain(rawDomain: string): string {
@@ -186,3 +236,24 @@ function normalizeDomain(rawDomain: string): string {
     return "";
   }
 }
+
+const SENSITIVE_PARAMETER_NAMES = new Set([
+  "access_token",
+  "id_token",
+  "token",
+  "auth",
+  "authorization",
+  "password",
+  "passwd",
+  "pwd",
+  "secret",
+  "api_key",
+  "apikey",
+  "session",
+  "session_id",
+  "sessionid",
+  "sid",
+  "code",
+  "jwt",
+  "key",
+]);
