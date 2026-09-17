@@ -108,7 +108,8 @@ export class NavigationVisibilityCollector {
       if (!capture) {
         return;
       }
-      this.#enqueue(() => this.#handleUrlChanged(tabId, changeInfo.url!, tab, capture.token, capture.moment));
+      const url = changeInfo.url;
+      this.#enqueue(() => this.#handleUrlChanged(tabId, url, tab, capture.token, capture.moment));
     });
 
     this.#tabs.onRemoved.addListener((tabId, removeInfo) => {
@@ -122,11 +123,13 @@ export class NavigationVisibilityCollector {
       if (!capture || !viewId) {
         return;
       }
-      this.#enqueue(() => this.#submitDraft(capture.token, () => this.#events.draft(
-        "navigation",
-        { transition_kind: "tab_closed" },
-        { viewId, moment: capture.moment },
-      )));
+      this.#enqueue(async () => {
+        await this.#submitDraft(capture.token, () => this.#events.draft(
+          "navigation",
+          { transition_kind: "tab_closed" },
+          { viewId, moment: capture.moment },
+        ));
+      });
     });
 
     this.#windows.onFocusChanged.addListener((windowId) => {
@@ -470,10 +473,15 @@ export class NavigationVisibilityCollector {
 }
 
 function toNavigationContext(tabId: number, tab: BrowserTabLike): NavigationContext {
-  return {
-    tabId,
-    incognito: tab.incognito,
-    url: tab.url,
-    title: tab.title,
-  };
+  const context: NavigationContext = { tabId };
+  if (typeof tab.incognito === "boolean") {
+    context.incognito = tab.incognito;
+  }
+  if (typeof tab.url === "string") {
+    context.url = tab.url;
+  }
+  if (typeof tab.title === "string") {
+    context.title = tab.title;
+  }
+  return context;
 }
