@@ -6,7 +6,13 @@ export const REQUIRED_HOST_ORIGINS = Object.freeze([
 export const HOST_PERMISSION_EXPLANATION = Object.freeze({
   title: "Allow website access for recording",
   body:
-    "CurioTrace needs access to normal web pages while a recording session is active so it can keep the same session complete as you move between sites and tabs. Granting this browser permission does not start background monitoring: CurioTrace reads browsing content only after you press Start and stops while Paused or after Stop. Private and excluded pages remain outside capture under the privacy policy. This permission also does not authorize sending your browsing data to an external AI service.",
+    "CurioTrace needs website access to keep one session complete as you move between normal web pages and tabs.",
+  points: Object.freeze([
+    "Website content is observed only while the session is Recording.",
+    "Paused or stopped sessions do not observe browsing content.",
+    "Private and excluded pages remain outside capture.",
+    "This permission does not authorize sending browsing data to an external AI service.",
+  ]),
   primaryAction: "Continue to browser permission",
   secondaryAction: "Cancel",
   denialMessage:
