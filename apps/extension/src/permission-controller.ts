@@ -158,9 +158,20 @@ export class PermissionStartController {
   }
 }
 
+export interface WebExtensionPermissionChange {
+  origins?: string[];
+  permissions?: string[];
+}
+
+export interface WebExtensionPermissionEvent {
+  addListener(listener: (change: WebExtensionPermissionChange) => void): void;
+  removeListener?(listener: (change: WebExtensionPermissionChange) => void): void;
+}
+
 export interface WebExtensionPermissionsAPI {
   contains(permission: { origins: string[] }): Promise<boolean>;
   request(permission: { origins: string[] }): Promise<boolean>;
+  onRemoved?: WebExtensionPermissionEvent;
 }
 
 // Thin Promise-based adapter shared by current Chromium and Firefox MV3
