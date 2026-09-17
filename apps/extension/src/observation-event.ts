@@ -3,6 +3,11 @@ export interface ObservationClock {
   monotonicMs(): number;
 }
 
+export interface ObservationMoment {
+  wallTime: string;
+  monotonicMs: number;
+}
+
 export interface ObservationIdFactory {
   next(prefix: "evt" | "view" | "br"): string;
 }
@@ -16,6 +21,7 @@ export interface ObservationDraftOptions {
   viewId?: string;
   source?: ObservationSource;
   captureMode?: "dom" | "redacted_visual" | "fingerprint_only" | "metadata_only" | "blocked" | "failed";
+  moment?: ObservationMoment;
 }
 
 export class DefaultObservationClock implements ObservationClock {
@@ -54,6 +60,13 @@ export class ObservationEventFactory {
     this.browserInstanceId = this.#ids.next("br");
   }
 
+  captureMoment(): ObservationMoment {
+    return Object.freeze({
+      wallTime: this.#clock.wallTime(),
+      monotonicMs: this.#clock.monotonicMs(),
+    });
+  }
+
   nextViewId(): string {
     return this.#ids.next("view");
   }
@@ -63,12 +76,13 @@ export class ObservationEventFactory {
     payload: Record<string, unknown>,
     options: ObservationDraftOptions = {},
   ): Record<string, unknown> {
+    const moment = options.moment ?? this.captureMoment();
     const event: Record<string, unknown> = {
       schema_version: "1.0",
       event_id: this.#ids.next("evt"),
       event_type: eventType,
-      wall_time: this.#clock.wallTime(),
-      monotonic_ms: this.#clock.monotonicMs(),
+      wall_time: moment.wallTime,
+      monotonic_ms: moment.monotonicMs,
       browser_instance_id: this.browserInstanceId,
       payload,
     };
