@@ -73,14 +73,24 @@ export function installBackground(
 
   const recordingObserver = {
     async syncCurrentActiveView(reason: "session_start" | "session_resume") {
-      browserEvents.activate();
-      const result = await collector!.syncCurrentActiveView(reason);
-      if (!result.accepted) {
+      try {
+        browserEvents.activate();
+        const result = await collector!.syncCurrentActiveView(reason);
+        if (!result.accepted) {
+          browserEvents.deactivate();
+        }
+        return result;
+      } catch {
+        helper.protocol.authority.suspendLocalCapture();
         browserEvents.deactivate();
+        helper.disconnect();
+        return { accepted: false as const, reason: "COLLECTOR_ACTIVATION_FAILED" };
       }
-      return result;
     },
     suspendObservation() {
+      // Revoke already-issued capture tokens before detaching browser events so
+      // queued async work cannot cross the Pause/Stop control boundary.
+      helper.protocol.authority.suspendLocalCapture();
       browserEvents.deactivate();
     },
   };
