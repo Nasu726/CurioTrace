@@ -1,10 +1,11 @@
 import { BackgroundSessionBroker, type ExtensionMessageSender } from "./background-broker.js";
-import { HelperConnectionController } from "./helper-connection.js";
 import {
-  NavigationVisibilityCollector,
-  type BrowserTabsAPI,
-  type BrowserWindowsAPI,
-} from "./navigation-visibility-collector.js";
+  BrowserObservationEventGate,
+  type RawBrowserTabsAPI,
+  type RawBrowserWindowsAPI,
+} from "./browser-observation-event-gate.js";
+import { HelperConnectionController } from "./helper-connection.js";
+import { NavigationVisibilityCollector } from "./navigation-visibility-collector.js";
 import {
   WebExtensionHostPermissionPort,
   type WebExtensionPermissionsAPI,
@@ -33,38 +34,62 @@ export interface BackgroundRuntimeAPI extends NativeRuntimeLike {
 export interface BackgroundExtensionAPI {
   runtime: BackgroundRuntimeAPI;
   permissions: WebExtensionPermissionsAPI;
-  tabs: BrowserTabsAPI;
-  windows: BrowserWindowsAPI;
+  tabs: RawBrowserTabsAPI;
+  windows: RawBrowserWindowsAPI;
 }
 
 export function installBackground(
   api: BackgroundExtensionAPI,
   { hostName = NATIVE_HOST_NAME }: { hostName?: string } = {},
 ) {
+  const browserEvents = new BrowserObservationEventGate(api.tabs, api.windows);
+  let collector: NavigationVisibilityCollector | null = null;
+
   const helper = new HelperConnectionController({
     runtime: api.runtime,
     hostName,
+    onDisconnected: () => browserEvents.deactivate(),
   });
   const permissions = new WebExtensionHostPermissionPort(api.permissions);
   const observations = new ProtocolObservationPort({
     protocol: helper.protocol,
     transport: helper,
-    onTerminalFailure: () => helper.disconnect(),
+    onTerminalFailure: () => {
+      browserEvents.deactivate();
+      helper.disconnect();
+    },
   });
-  const collector = new NavigationVisibilityCollector({
-    tabs: api.tabs,
-    windows: api.windows,
+  collector = new NavigationVisibilityCollector({
+    tabs: browserEvents.tabs,
+    windows: browserEvents.windows,
     authority: helper.protocol.authority,
     observations,
-    onFatalError: () => helper.disconnect(),
+    onFatalError: () => {
+      browserEvents.deactivate();
+      helper.disconnect();
+    },
   });
   collector.install();
+
+  const recordingObserver = {
+    async syncCurrentActiveView(reason: "session_start" | "session_resume") {
+      browserEvents.activate();
+      const result = await collector!.syncCurrentActiveView(reason);
+      if (!result.accepted) {
+        browserEvents.deactivate();
+      }
+      return result;
+    },
+    suspendObservation() {
+      browserEvents.deactivate();
+    },
+  };
 
   const broker = new BackgroundSessionBroker({
     runtimeId: api.runtime.id,
     permissions,
     helper,
-    recordingObserver: collector,
+    recordingObserver,
   });
 
   api.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -75,7 +100,7 @@ export function installBackground(
     return true;
   });
 
-  return Object.freeze({ helper, broker, collector });
+  return Object.freeze({ helper, broker, collector, browserEvents });
 }
 
 function detectExtensionAPI(): BackgroundExtensionAPI | null {
@@ -90,10 +115,14 @@ function detectExtensionAPI(): BackgroundExtensionAPI | null {
     !api.permissions ||
     !api.tabs ||
     !api.tabs.onActivated ||
+    typeof api.tabs.onActivated.removeListener !== "function" ||
     !api.tabs.onUpdated ||
+    typeof api.tabs.onUpdated.removeListener !== "function" ||
     !api.tabs.onRemoved ||
+    typeof api.tabs.onRemoved.removeListener !== "function" ||
     !api.windows ||
-    !api.windows.onFocusChanged
+    !api.windows.onFocusChanged ||
+    typeof api.windows.onFocusChanged.removeListener !== "function"
   ) {
     return null;
   }
