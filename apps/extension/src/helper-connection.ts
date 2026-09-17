@@ -24,6 +24,7 @@ export class HelperConnectionController implements ControlTransport {
   #runtime: NativeRuntimeLike;
   #hostName: string;
   #timeoutMs: number;
+  #onDisconnected: () => void;
   #transport: NativeMessagingTransport | null = null;
   #connecting = false;
 
@@ -32,11 +33,13 @@ export class HelperConnectionController implements ControlTransport {
     hostName,
     protocol = new ExtensionProtocolState(),
     timeoutMs = 10_000,
+    onDisconnected = () => {},
   }: {
     runtime: NativeRuntimeLike;
     hostName: string;
     protocol?: ExtensionProtocolState;
     timeoutMs?: number;
+    onDisconnected?: () => void;
   }) {
     if (hostName.length === 0) {
       throw new Error("native host name is required");
@@ -48,6 +51,7 @@ export class HelperConnectionController implements ControlTransport {
     this.#hostName = hostName;
     this.protocol = protocol;
     this.#timeoutMs = timeoutMs;
+    this.#onDisconnected = onDisconnected;
   }
 
   get connected(): boolean {
@@ -78,6 +82,7 @@ export class HelperConnectionController implements ControlTransport {
         if (this.#transport === transport) {
           this.#transport = null;
           this.protocol.onTransportDisconnected();
+          this.#notifyDisconnected();
         }
       },
     });
@@ -116,10 +121,20 @@ export class HelperConnectionController implements ControlTransport {
     if (!transport) {
       if (this.protocol.snapshot.authority.helperConnected) {
         this.protocol.onTransportDisconnected();
+        this.#notifyDisconnected();
       }
       return;
     }
     transport.close();
+  }
+
+  #notifyDisconnected(): void {
+    try {
+      this.#onDisconnected();
+    } catch {
+      // Disconnect is already authoritative and fail-closed. UI/browser cleanup
+      // callbacks cannot be allowed to resurrect the connection or mask it.
+    }
   }
 }
 
