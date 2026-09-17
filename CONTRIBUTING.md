@@ -43,6 +43,23 @@ CurioTrace treats privacy/capture-authority failures as correctness failures. Re
 
 Run independent test groups in parallel in CI where practical.
 
+### GUI-changing pull requests
+
+Automated tests are necessary but **not sufficient** for any change that can alter a user-visible screen, state, layout, copy, focus behavior, or interaction.
+
+Before merging a GUI-changing PR:
+
+1. render the affected UI rather than reviewing markup/CSS alone;
+2. inspect representative states in both light and dark appearance where supported;
+3. check the narrowest supported viewport and a large-text / roughly 200% zoom condition for clipping, overflow, hidden controls, and unnecessary horizontal scrolling;
+4. exercise the primary flow with keyboard only and verify logical focus order, visible focus, and sensible focus movement after panels/dialog-like views appear;
+5. verify that state and errors are not conveyed by color alone and that text/control contrast remains readable;
+6. check pointer target size/spacing, disabled/busy feedback, accessible names/status announcements, and destructive-action clarity;
+7. review information hierarchy and cognitive load: the user should be able to identify current state, consequence, and next safe action quickly;
+8. visually inspect screenshots/renders and record the result in the PR or review notes, including any known limitation.
+
+Use `docs/GUI_REVIEW.md` as the detailed checklist. If actual rendering is unavailable in the current environment, the GUI-changing PR remains unverified and should not be merged merely because unit tests pass.
+
 ## Source of truth
 
 Stable product decisions belong in `docs/DECISIONS.md` and `docs/PRODUCT_SPEC.md`. Replaceable implementation choices belong in implementation-specific documentation such as `docs/IMPLEMENTATION_STACK.md`.
