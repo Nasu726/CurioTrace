@@ -9,10 +9,20 @@ export type ObservationSubmitResult =
 export class ProtocolObservationPort {
   #protocol: ExtensionProtocolState;
   #transport: ControlTransport;
+  #onTerminalFailure: (reason: string) => void;
 
-  constructor({ protocol, transport }: { protocol: ExtensionProtocolState; transport: ControlTransport }) {
+  constructor({
+    protocol,
+    transport,
+    onTerminalFailure = () => {},
+  }: {
+    protocol: ExtensionProtocolState;
+    transport: ControlTransport;
+    onTerminalFailure?: (reason: string) => void;
+  }) {
     this.#protocol = protocol;
     this.#transport = transport;
+    this.#onTerminalFailure = onTerminalFailure;
   }
 
   async submit(
@@ -28,13 +38,11 @@ export class ProtocolObservationPort {
     try {
       response = await this.#transport.send(request.message);
     } catch {
-      this.#protocol.authority.suspendLocalCapture();
-      return { accepted: false, reason: "TRANSPORT_ERROR" };
+      return this.#terminalFailure("TRANSPORT_ERROR");
     }
 
     if (response.kind !== "ack" || typeof response.payload.accepted !== "boolean") {
-      this.#protocol.authority.suspendLocalCapture();
-      return { accepted: false, reason: "MALFORMED_OBSERVATION_ACK" };
+      return this.#terminalFailure("MALFORMED_OBSERVATION_ACK");
     }
     if (response.payload.accepted) {
       return { accepted: true, reason: "OK" };
@@ -54,8 +62,24 @@ export class ProtocolObservationPort {
       if (!applied.accepted) {
         this.#protocol.authority.suspendLocalCapture();
       }
-    } else if (AUTHORITY_FAILURES.has(reason)) {
+    }
+
+    // Any rejected durable observation is terminal for the current browser-side
+    // recording path. Schema/privacy rejection indicates an implementation
+    // mismatch; authority/storage rejection indicates stale or unavailable
+    // helper state. Continuing would silently create an incomplete session.
+    return this.#terminalFailure(reason, false);
+  }
+
+  #terminalFailure(reason: string, suspend = true): ObservationSubmitResult {
+    if (suspend || this.#protocol.authority.captureAllowed) {
       this.#protocol.authority.suspendLocalCapture();
+    }
+    try {
+      this.#onTerminalFailure(reason);
+    } catch {
+      // Terminal cleanup is best-effort. Capture authority is already suspended,
+      // so a cleanup callback must never reactivate or mask the original failure.
     }
     return { accepted: false, reason };
   }
@@ -78,12 +102,3 @@ function asString(value: unknown): string | null {
 }
 
 const STATES = new Set<SessionState>(["IDLE", "RECORDING", "PAUSED", "FINISHED", "INTERRUPTED"]);
-const AUTHORITY_FAILURES = new Set([
-  "NOT_RECORDING",
-  "UNKNOWN_SESSION",
-  "STALE_EPOCH",
-  "STORE_ERROR",
-  "STORE_NOT_CONFIGURED",
-  "STORE_UNAVAILABLE",
-  "STATE_PERSISTENCE_ERROR",
-]);
