@@ -7,7 +7,9 @@ import {
 import { HelperConnectionController } from "./helper-connection.js";
 import { NavigationVisibilityCollector } from "./navigation-visibility-collector.js";
 import {
+  REQUIRED_HOST_ORIGINS,
   WebExtensionHostPermissionPort,
+  type WebExtensionPermissionChange,
   type WebExtensionPermissionsAPI,
 } from "./permission-controller.js";
 import type { NativePortLike, NativeRuntimeLike } from "./native-messaging-transport.js";
@@ -89,7 +91,7 @@ export function installBackground(
     },
     suspendObservation() {
       // Revoke already-issued capture tokens before detaching browser events so
-      // queued async work cannot cross the Pause/Stop control boundary.
+      // queued async work cannot cross the Pause/Stop/control boundary.
       helper.protocol.authority.suspendLocalCapture();
       browserEvents.deactivate();
     },
@@ -100,6 +102,18 @@ export function installBackground(
     permissions,
     helper,
     recordingObserver,
+  });
+
+  api.permissions.onRemoved?.addListener((change) => {
+    if (!removesRequiredHostAccess(change)) {
+      return;
+    }
+    // Permission revocation is a synchronous acquisition boundary. Stop
+    // browser delivery and invalidate queued capture before disconnecting the
+    // helper. The native host exits on stdin EOF; durable restart semantics
+    // convert any unfinished RECORDING state to INTERRUPTED on next launch.
+    recordingObserver.suspendObservation();
+    helper.disconnect();
   });
 
   api.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -113,6 +127,15 @@ export function installBackground(
   return Object.freeze({ helper, broker, collector, browserEvents });
 }
 
+function removesRequiredHostAccess(change: WebExtensionPermissionChange): boolean {
+  const origins = change.origins ?? [];
+  return origins.some((origin) =>
+    origin === "<all_urls>" ||
+    origin === "*://*/*" ||
+    REQUIRED_HOST_ORIGINS.some((required) => required === origin),
+  );
+}
+
 function detectExtensionAPI(): BackgroundExtensionAPI | null {
   const scope = globalThis as typeof globalThis & {
     browser?: BackgroundExtensionAPI;
@@ -123,6 +146,8 @@ function detectExtensionAPI(): BackgroundExtensionAPI | null {
     !api?.runtime?.id ||
     !api.runtime.onMessage ||
     !api.permissions ||
+    !api.permissions.onRemoved ||
+    typeof api.permissions.onRemoved.addListener !== "function" ||
     !api.tabs ||
     !api.tabs.onActivated ||
     typeof api.tabs.onActivated.removeListener !== "function" ||
