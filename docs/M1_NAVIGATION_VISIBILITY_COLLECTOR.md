@@ -16,17 +16,18 @@ It records only:
 
 It does **not** extract page body text, DOM semantic units, screenshots, OCR, form values, or clipboard contents.
 
-## Capture-authority boundary
+## Capture-authority and browser-listener boundary
 
-Browser listeners may remain registered while CurioTrace is idle, but each event first calls `CaptureAuthority.beginCapture()`.
+Browser observation listeners are **not attached to the browser while CurioTrace is IDLE, PAUSED, FINISHED, INTERRUPTED, or disconnected**. `BrowserObservationEventGate` keeps the collector's logical listeners dormant and attaches them to `tabs`/`windows` only after helper-authoritative Start/Resume succeeds.
 
-If authority is absent (IDLE, PAUSED, FINISHED, INTERRUPTED, disconnected, or locally suspended):
+Pause/Stop requests detach the browser listeners synchronously before the Native Messaging control round trip. Helper disconnect, observation rejection, or collector failure also detaches them immediately. This prevents ordinary URL/title event arguments from being delivered to CurioTrace outside the authorized recording interval, rather than merely receiving and discarding them later.
 
-- no observation is built;
-- activation handling does not call `tabs.get()`;
-- no source URL/title is evaluated or sent to the helper.
+While listeners are active, every event additionally calls `CaptureAuthority.beginCapture()` before any explicit browser metadata lookup. Async work revalidates the capture token before `tabs.get()`/`tabs.query()` results are used and again when the durable event is materialized. Pause/Stop/epoch change/disconnect therefore invalidates already-queued work.
 
-Async work revalidates the capture token before reading tab metadata and again when materializing the durable event. Pause/Stop/epoch change/disconnect therefore invalidates queued work.
+The listener gate and capture token are intentionally separate defenses:
+
+- listener registration enforces the product's coarse Start/Pause/Stop acquisition boundary;
+- capture authority prevents stale/in-flight async work from crossing a session/epoch boundary.
 
 ## Start and Resume snapshots
 
@@ -34,14 +35,15 @@ A session cannot be reported as successfully started/resumed merely because the 
 
 After helper-authoritative Start/Resume:
 
-1. the collector queries the currently active tab in the last-focused browser window;
-2. it creates a fresh CurioTrace `view_id`;
-3. it submits navigation/privacy continuity;
-4. it submits the active-tab visibility fact.
+1. browser observation listeners are activated;
+2. the collector queries the currently active tab in the last-focused browser window;
+3. it creates a fresh CurioTrace `view_id`;
+4. it submits navigation/privacy continuity;
+5. it submits the active-tab visibility fact.
 
 Start clears prior-session in-memory view continuity. Resume intentionally creates a fresh view segment so the paused interval cannot be treated as continuous exposure.
 
-If the collector is missing or the initial snapshot fails in a way that cannot be durably represented, the background broker disconnects the helper and reports Start/Resume failure instead of continuing a partial recording.
+If the collector is missing or the initial snapshot fails in a way that cannot be durably represented, browser listeners are detached, the helper is disconnected, and Start/Resume reports failure instead of continuing a partial recording.
 
 ## Privacy precedence
 
@@ -85,9 +87,9 @@ Later exposure reconstruction interprets these facts according to `docs/PRODUCT_
 
 If the helper reports an authoritative state change such as durable-store failure -> `INTERRUPTED`, the extension applies that helper state immediately and invalidates existing capture tokens.
 
-Any rejected durable observation is terminal for the current browser-side recording path. This includes schema/privacy validation rejection, stale authority, storage failure, malformed acknowledgement, and transport failure. Continuing after such a rejection could silently create an incomplete trace. Therefore local capture is suspended and production wiring disconnects Native Messaging; subsequent helper recovery follows the durable `INTERRUPTED` semantics.
+Any rejected durable observation is terminal for the current browser-side recording path. This includes schema/privacy validation rejection, stale authority, storage failure, malformed acknowledgement, and transport failure. Continuing after such a rejection could silently create an incomplete trace. Therefore local capture is suspended, browser listeners are detached, and production wiring disconnects Native Messaging; subsequent helper recovery follows the durable `INTERRUPTED` semantics.
 
-Unexpected collector exceptions use the same fail-closed disconnect path so no uncertain capture authority remains active.
+Unexpected collector exceptions use the same fail-closed detach/disconnect path so no uncertain capture authority remains active.
 
 ## Current API baseline
 
