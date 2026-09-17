@@ -41,6 +41,7 @@ test("accepted observation keeps current recording authority", async () => {
   const protocol = recordingProtocol();
   const capture = protocol.authority.beginCapture();
   assert.equal(capture.allowed, true);
+  let terminalFailures = 0;
   const port = new ProtocolObservationPort({
     protocol,
     transport: {
@@ -53,18 +54,21 @@ test("accepted observation keeps current recording authority", async () => {
         };
       },
     },
+    onTerminalFailure: () => { terminalFailures += 1; },
   });
 
   const result = await port.submit(eventFor(capture.token), capture.token);
   assert.deepEqual(result, { accepted: true, reason: "OK" });
   assert.equal(protocol.authority.snapshot.sessionState, "RECORDING");
   assert.equal(protocol.authority.snapshot.captureAllowed, true);
+  assert.equal(terminalFailures, 0);
 });
 
-test("store failure ack applies helper Interrupted authority", async () => {
+test("store failure ack applies helper Interrupted authority and terminates transport path", async () => {
   const protocol = recordingProtocol();
   const capture = protocol.authority.beginCapture();
   assert.equal(capture.allowed, true);
+  const terminalReasons = [];
   const port = new ProtocolObservationPort({
     protocol,
     transport: {
@@ -83,6 +87,7 @@ test("store failure ack applies helper Interrupted authority", async () => {
         };
       },
     },
+    onTerminalFailure: (reason) => terminalReasons.push(reason),
   });
 
   const result = await port.submit(eventFor(capture.token), capture.token);
@@ -91,12 +96,14 @@ test("store failure ack applies helper Interrupted authority", async () => {
   assert.equal(protocol.authority.snapshot.recordingEpoch, 5);
   assert.equal(protocol.authority.snapshot.captureAllowed, false);
   assert.equal(protocol.authority.validateCaptureToken(capture.token).valid, false);
+  assert.deepEqual(terminalReasons, ["STORE_ERROR"]);
 });
 
-test("authority rejection without helper state suspends local capture", async () => {
+test("authority rejection without helper state suspends local capture and terminates", async () => {
   const protocol = recordingProtocol();
   const capture = protocol.authority.beginCapture();
   assert.equal(capture.allowed, true);
+  const terminalReasons = [];
   const port = new ProtocolObservationPort({
     protocol,
     transport: {
@@ -109,18 +116,47 @@ test("authority rejection without helper state suspends local capture", async ()
         };
       },
     },
+    onTerminalFailure: (reason) => terminalReasons.push(reason),
   });
 
   const result = await port.submit(eventFor(capture.token), capture.token);
   assert.deepEqual(result, { accepted: false, reason: "STALE_EPOCH" });
   assert.equal(protocol.authority.snapshot.sessionState, "RECORDING");
   assert.equal(protocol.authority.snapshot.captureAllowed, false);
+  assert.deepEqual(terminalReasons, ["STALE_EPOCH"]);
 });
 
-test("malformed observation ack fails closed", async () => {
+test("schema or privacy rejection is terminal rather than silently dropping future observations", async () => {
   const protocol = recordingProtocol();
   const capture = protocol.authority.beginCapture();
   assert.equal(capture.allowed, true);
+  const terminalReasons = [];
+  const port = new ProtocolObservationPort({
+    protocol,
+    transport: {
+      async send(message) {
+        return {
+          protocol_version: "1.0",
+          message_id: message.message_id,
+          kind: "ack",
+          payload: { accepted: false, reason: "FORBIDDEN_PAYLOAD_FIELD:auth_token" },
+        };
+      },
+    },
+    onTerminalFailure: (reason) => terminalReasons.push(reason),
+  });
+
+  const result = await port.submit(eventFor(capture.token), capture.token);
+  assert.deepEqual(result, { accepted: false, reason: "FORBIDDEN_PAYLOAD_FIELD:auth_token" });
+  assert.equal(protocol.authority.snapshot.captureAllowed, false);
+  assert.deepEqual(terminalReasons, ["FORBIDDEN_PAYLOAD_FIELD:auth_token"]);
+});
+
+test("malformed observation ack fails closed and invokes terminal cleanup", async () => {
+  const protocol = recordingProtocol();
+  const capture = protocol.authority.beginCapture();
+  assert.equal(capture.allowed, true);
+  const terminalReasons = [];
   const port = new ProtocolObservationPort({
     protocol,
     transport: {
@@ -133,9 +169,11 @@ test("malformed observation ack fails closed", async () => {
         };
       },
     },
+    onTerminalFailure: (reason) => terminalReasons.push(reason),
   });
 
   const result = await port.submit(eventFor(capture.token), capture.token);
   assert.deepEqual(result, { accepted: false, reason: "MALFORMED_OBSERVATION_ACK" });
   assert.equal(protocol.authority.snapshot.captureAllowed, false);
+  assert.deepEqual(terminalReasons, ["MALFORMED_OBSERVATION_ACK"]);
 });
