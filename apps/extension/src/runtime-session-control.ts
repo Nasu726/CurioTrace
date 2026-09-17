@@ -13,6 +13,10 @@ export type BackgroundStateResult =
     }
   | { accepted: false; reason: string };
 
+type BackgroundResponse =
+  | { accepted: true; reason: string; state?: unknown }
+  | { accepted: false; reason: string };
+
 export class RuntimeSessionControlPort {
   #runtime: RuntimeSendMessageAPI;
 
@@ -52,7 +56,7 @@ export class RuntimeSessionControlPort {
     return { accepted: true, reason: "OK" };
   }
 
-  async #send(message: unknown): Promise<{ accepted: boolean; reason: string; state?: unknown }> {
+  async #send(message: unknown): Promise<BackgroundResponse> {
     let raw: unknown;
     try {
       raw = await this.#runtime.sendMessage(message);
@@ -62,7 +66,10 @@ export class RuntimeSessionControlPort {
     if (!isRecord(raw) || typeof raw.accepted !== "boolean" || typeof raw.reason !== "string") {
       return { accepted: false, reason: "INVALID_BACKGROUND_RESPONSE" };
     }
-    return { accepted: raw.accepted, reason: raw.reason, state: raw.state };
+    if (!raw.accepted) {
+      return { accepted: false, reason: raw.reason };
+    }
+    return { accepted: true, reason: raw.reason, state: raw.state };
   }
 }
 
