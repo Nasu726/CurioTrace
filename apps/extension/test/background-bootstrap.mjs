@@ -139,7 +139,12 @@ test("background broker connects, handshakes, and forwards one helper Start", as
   });
 
   const response = await broker.handle({ kind: "curiotrace.session.start" }, extensionSender());
-  assert.deepEqual(response, { accepted: true, reason: "OK" });
+  assert.equal(response.accepted, true);
+  assert.equal(response.reason, "OK");
+  assert.equal(response.state.authority.sessionState, "RECORDING");
+  assert.equal(response.state.authority.sessionId, "ses_1");
+  assert.equal(response.state.authority.recordingEpoch, 1);
+  assert.equal(response.state.authority.captureAllowed, true);
   assert.equal(connects, 1);
   assert.deepEqual(port.sent.map((message) => message.kind), ["hello", "session.start"]);
   assert.equal(helper.protocol.authority.snapshot.captureAllowed, true);
