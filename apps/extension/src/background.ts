@@ -49,6 +49,7 @@ export function installBackground(
   const observations = new ProtocolObservationPort({
     protocol: helper.protocol,
     transport: helper,
+    onTerminalFailure: () => helper.disconnect(),
   });
   const collector = new NavigationVisibilityCollector({
     tabs: api.tabs,
