@@ -58,6 +58,15 @@ For denied views:
 - the durable navigation event contains continuity (`view_id`, transition kind) but no source pointer;
 - a `privacy_decision` with `capture_mode=blocked` records only the denial reason and optional non-content rule ID.
 
+For allowed HTTP/HTTPS source pointers, CurioTrace performs conservative URL sanitization before persistence:
+
+- URL username/password components are removed;
+- obvious credential/token/password/secret/API-key/session/OAuth query values are replaced with `__redacted__`;
+- a fragment containing an obvious secret parameter is omitted entirely;
+- ordinary non-secret query values/fragments remain when needed for provenance.
+
+This is a narrow syntactic safeguard, not a promise to identify every secret embedded in an arbitrary URL. The explicit limitation in `docs/PRODUCT_SPEC.md` still applies.
+
 Runtime browser tab/window IDs are never written into durable observation events.
 
 ## Visibility semantics
@@ -76,7 +85,9 @@ Later exposure reconstruction interprets these facts according to `docs/PRODUCT_
 
 If the helper reports an authoritative state change such as durable-store failure -> `INTERRUPTED`, the extension applies that helper state immediately and invalidates existing capture tokens.
 
-Transport/malformed-authority failures suspend local capture. Unexpected collector exceptions call the production fatal handler, which disconnects Native Messaging so no uncertain capture authority remains active.
+Any rejected durable observation is terminal for the current browser-side recording path. This includes schema/privacy validation rejection, stale authority, storage failure, malformed acknowledgement, and transport failure. Continuing after such a rejection could silently create an incomplete trace. Therefore local capture is suspended and production wiring disconnects Native Messaging; subsequent helper recovery follows the durable `INTERRUPTED` semantics.
+
+Unexpected collector exceptions use the same fail-closed disconnect path so no uncertain capture authority remains active.
 
 ## Current API baseline
 
