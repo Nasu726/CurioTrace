@@ -10,7 +10,11 @@ class FakeEvent {
   listeners = [];
 
   addListener(listener) {
-    this.listeners.push(listener);
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  removeListener(listener) {
+    this.listeners = this.listeners.filter((candidate) => candidate !== listener);
   }
 
   emit(...args) {
@@ -74,9 +78,13 @@ function extensionSender(runtimeId = "ext_1") {
 function recordingObserver() {
   return {
     calls: [],
+    suspensions: 0,
     async syncCurrentActiveView(reason) {
       this.calls.push(reason);
       return { accepted: true, reason: "OK" };
+    },
+    suspendObservation() {
+      this.suspensions += 1;
     },
   };
 }
@@ -203,7 +211,7 @@ test("recording activation without collector fails closed after helper Start", a
   assert.equal(helper.protocol.authority.snapshot.captureAllowed, false);
 });
 
-test("installBackground registers collector and async own-extension message handler", async () => {
+test("installBackground leaves browser observation listeners unregistered while idle", async () => {
   const port = new FakePort();
   port.onPost = (message) => queueMicrotask(() => port.emitMessage(helloAck(message)));
   const onMessage = new FakeEvent();
@@ -222,10 +230,11 @@ test("installBackground registers collector and async own-extension message hand
   const captureApis = browserCaptureApis();
   const installed = installBackground({ runtime, permissions, ...captureApis });
   assert.equal(onMessage.listeners.length, 1);
-  assert.equal(captureApis.tabs.onActivated.listeners.length, 1);
-  assert.equal(captureApis.tabs.onUpdated.listeners.length, 1);
-  assert.equal(captureApis.tabs.onRemoved.listeners.length, 1);
-  assert.equal(captureApis.windows.onFocusChanged.listeners.length, 1);
+  assert.equal(captureApis.tabs.onActivated.listeners.length, 0);
+  assert.equal(captureApis.tabs.onUpdated.listeners.length, 0);
+  assert.equal(captureApis.tabs.onRemoved.listeners.length, 0);
+  assert.equal(captureApis.windows.onFocusChanged.listeners.length, 0);
+  assert.equal(installed.browserEvents.active, false);
   assert.equal(installed.helper.connected, false);
 
   const response = await new Promise((resolve) => {
@@ -238,6 +247,8 @@ test("installBackground registers collector and async own-extension message hand
   });
   assert.deepEqual(response, { accepted: true, reason: "OK" });
   assert.equal(installed.helper.connected, true);
+  assert.equal(installed.browserEvents.active, false);
+  assert.equal(captureApis.tabs.onUpdated.listeners.length, 0);
 });
 
 test("manifest keeps broad hosts optional and supports Chrome/Firefox MV3 backgrounds", async () => {
