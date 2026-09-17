@@ -29,10 +29,17 @@ export interface ExtensionMessageSender {
   tab?: unknown;
 }
 
+export interface RecordingActivationObserver {
+  syncCurrentActiveView(
+    reason: "session_start" | "session_resume",
+  ): Promise<{ accepted: true; reason: "OK" } | { accepted: false; reason: string }>;
+}
+
 export class BackgroundSessionBroker {
   #runtimeId: string;
   #permissions: Pick<HostPermissionPort, "contains">;
   #helper: HelperConnectionController;
+  #recordingObserver: RecordingActivationObserver | null;
   #startPort: ProtocolSessionStartPort;
   #controlPort: ProtocolSessionControlPort;
 
@@ -40,10 +47,12 @@ export class BackgroundSessionBroker {
     runtimeId,
     permissions,
     helper,
+    recordingObserver = null,
   }: {
     runtimeId: string;
     permissions: Pick<HostPermissionPort, "contains">;
     helper: HelperConnectionController;
+    recordingObserver?: RecordingActivationObserver | null;
   }) {
     if (!runtimeId) {
       throw new Error("runtimeId is required");
@@ -51,6 +60,7 @@ export class BackgroundSessionBroker {
     this.#runtimeId = runtimeId;
     this.#permissions = permissions;
     this.#helper = helper;
+    this.#recordingObserver = recordingObserver;
     this.#startPort = new ProtocolSessionStartPort({ protocol: helper.protocol, transport: helper });
     this.#controlPort = new ProtocolSessionControlPort({ protocol: helper.protocol, transport: helper });
   }
@@ -96,7 +106,11 @@ export class BackgroundSessionBroker {
     if (!connected.accepted) {
       return connected;
     }
-    return normalize(await this.#startPort.startSession(), this.#helper.protocol.snapshot);
+    const started = await this.#startPort.startSession();
+    if (!started.accepted) {
+      return normalize(started, this.#helper.protocol.snapshot);
+    }
+    return this.#finishRecordingActivation("session_start");
   }
 
   async #control(action: SessionControlAction): Promise<BackgroundResponse> {
@@ -117,7 +131,40 @@ export class BackgroundSessionBroker {
         result = await this.#controlPort.stop();
         break;
     }
+    if (!result.accepted) {
+      return normalize(result, this.#helper.protocol.snapshot);
+    }
+    if (action === "resume") {
+      return this.#finishRecordingActivation("session_resume");
+    }
     return normalize(result, this.#helper.protocol.snapshot);
+  }
+
+  async #finishRecordingActivation(
+    reason: "session_start" | "session_resume",
+  ): Promise<BackgroundResponse> {
+    if (!this.#recordingObserver) {
+      this.#helper.disconnect();
+      return {
+        accepted: false,
+        reason: "COLLECTOR_NOT_CONFIGURED",
+        state: this.#helper.protocol.snapshot,
+      };
+    }
+    const observed = await this.#recordingObserver.syncCurrentActiveView(reason);
+    if (!observed.accepted) {
+      this.#helper.disconnect();
+      return {
+        accepted: false,
+        reason: observed.reason,
+        state: this.#helper.protocol.snapshot,
+      };
+    }
+    return {
+      accepted: true,
+      reason: "OK",
+      state: this.#helper.protocol.snapshot,
+    };
   }
 
   async #state(): Promise<BackgroundResponse> {
