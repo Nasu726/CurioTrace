@@ -21,6 +21,12 @@ class FakePort {
   onDisconnect = new FakeEvent();
   sent = [];
   epoch = 0;
+  initialState;
+
+  constructor({ initialState = "IDLE", initialEpoch = 0 } = {}) {
+    this.initialState = initialState;
+    this.epoch = initialEpoch;
+  }
 
   postMessage(message) {
     this.sent.push(message);
@@ -39,9 +45,9 @@ class FakePort {
         kind: "hello.ack",
         payload: {
           compatible: true,
-          session_state: "IDLE",
-          session_id: null,
-          recording_epoch: 0,
+          session_state: this.initialState,
+          session_id: this.initialState === "IDLE" ? null : "ses_1",
+          recording_epoch: this.epoch,
         },
       });
       return;
@@ -87,7 +93,7 @@ class FakePort {
         accepted: true,
         reason: "OK",
         state,
-        session_id: state === "FINISHED" ? "ses_1" : "ses_1",
+        session_id: "ses_1",
         recording_epoch: this.epoch,
       },
     });
@@ -105,13 +111,14 @@ function sendBackground(onMessage, kind) {
   });
 }
 
-test("raw browser listeners exist only during helper-authorized Recording", async () => {
+function harness({ port = new FakePort(), permissionGranted = true } = {}) {
   const rawActivated = new FakeEvent();
   const rawUpdated = new FakeEvent();
   const rawRemoved = new FakeEvent();
   const rawFocus = new FakeEvent();
   const onMessage = new FakeEvent();
-  const port = new FakePort();
+  const onPermissionRemoved = new FakeEvent();
+  const permissionState = { granted: permissionGranted };
   const activeTab = {
     id: 10,
     windowId: 20,
@@ -128,8 +135,9 @@ test("raw browser listeners exist only during helper-authorized Recording", asyn
       connectNative() { return port; },
     },
     permissions: {
-      async contains() { return true; },
-      async request() { return true; },
+      async contains() { return permissionState.granted; },
+      async request() { return permissionState.granted; },
+      onRemoved: onPermissionRemoved,
     },
     tabs: {
       onActivated: rawActivated,
@@ -144,36 +152,86 @@ test("raw browser listeners exist only during helper-authorized Recording", asyn
     },
   });
 
-  const assertListenerCount = (count) => {
-    assert.equal(rawActivated.listeners.length, count);
-    assert.equal(rawUpdated.listeners.length, count);
-    assert.equal(rawRemoved.listeners.length, count);
-    assert.equal(rawFocus.listeners.length, count);
+  return {
+    installed,
+    onMessage,
+    onPermissionRemoved,
+    permissionState,
+    port,
+    rawEvents: [rawActivated, rawUpdated, rawRemoved, rawFocus],
   };
+}
 
-  assert.equal(installed.browserEvents.active, false);
-  assertListenerCount(0);
+function assertListenerCount(rawEvents, count) {
+  for (const event of rawEvents) {
+    assert.equal(event.listeners.length, count);
+  }
+}
 
-  const started = await sendBackground(onMessage, "curiotrace.session.start");
+test("raw browser listeners exist only during helper-authorized Recording", async () => {
+  const h = harness();
+
+  assert.equal(h.installed.browserEvents.active, false);
+  assertListenerCount(h.rawEvents, 0);
+
+  const started = await sendBackground(h.onMessage, "curiotrace.session.start");
   assert.equal(started.accepted, true);
   assert.equal(started.state.authority.sessionState, "RECORDING");
-  assert.equal(installed.browserEvents.active, true);
-  assertListenerCount(1);
+  assert.equal(h.installed.browserEvents.active, true);
+  assertListenerCount(h.rawEvents, 1);
 
-  const paused = await sendBackground(onMessage, "curiotrace.session.pause");
+  const paused = await sendBackground(h.onMessage, "curiotrace.session.pause");
   assert.equal(paused.accepted, true);
   assert.equal(paused.state.authority.sessionState, "PAUSED");
-  assert.equal(installed.browserEvents.active, false);
-  assertListenerCount(0);
+  assert.equal(h.installed.browserEvents.active, false);
+  assertListenerCount(h.rawEvents, 0);
 
-  const resumed = await sendBackground(onMessage, "curiotrace.session.resume");
+  h.permissionState.granted = false;
+  const deniedResume = await sendBackground(h.onMessage, "curiotrace.session.resume");
+  assert.equal(deniedResume.accepted, false);
+  assert.equal(deniedResume.reason, "HOST_PERMISSION_REQUIRED");
+  assert.equal(h.installed.browserEvents.active, false);
+  assertListenerCount(h.rawEvents, 0);
+  assert.equal(h.port.sent.some((message) => message.kind === "session.resume"), false);
+
+  h.permissionState.granted = true;
+  const resumed = await sendBackground(h.onMessage, "curiotrace.session.resume");
   assert.equal(resumed.accepted, true);
   assert.equal(resumed.state.authority.sessionState, "RECORDING");
-  assert.equal(installed.browserEvents.active, true);
-  assertListenerCount(1);
+  assert.equal(h.installed.browserEvents.active, true);
+  assertListenerCount(h.rawEvents, 1);
 
-  port.onDisconnect.emit();
-  assert.equal(installed.browserEvents.active, false);
-  assertListenerCount(0);
-  assert.equal(installed.helper.protocol.authority.snapshot.captureAllowed, false);
+  h.permissionState.granted = false;
+  h.onPermissionRemoved.emit({ origins: ["https://*/*"] });
+  assert.equal(h.installed.browserEvents.active, false);
+  assertListenerCount(h.rawEvents, 0);
+  assert.equal(h.installed.helper.connected, false);
+  assert.equal(h.installed.helper.protocol.authority.snapshot.captureAllowed, false);
+});
+
+test("fresh handshake that reports Recording restores observation only after host permission check", async () => {
+  const h = harness({ port: new FakePort({ initialState: "RECORDING", initialEpoch: 7 }) });
+  assertListenerCount(h.rawEvents, 0);
+
+  const state = await sendBackground(h.onMessage, "curiotrace.state.get");
+  assert.equal(state.accepted, true);
+  assert.equal(state.state.authority.sessionState, "RECORDING");
+  assert.equal(state.state.authority.recordingEpoch, 7);
+  assert.equal(h.installed.browserEvents.active, true);
+  assertListenerCount(h.rawEvents, 1);
+  assert.equal(h.port.sent.filter((message) => message.kind === "observation.submit").length, 2);
+});
+
+test("recovered Recording fails closed when required host permission is absent", async () => {
+  const h = harness({
+    port: new FakePort({ initialState: "RECORDING", initialEpoch: 7 }),
+    permissionGranted: false,
+  });
+
+  const state = await sendBackground(h.onMessage, "curiotrace.state.get");
+  assert.equal(state.accepted, false);
+  assert.equal(state.reason, "HOST_PERMISSION_REQUIRED");
+  assert.equal(h.installed.browserEvents.active, false);
+  assertListenerCount(h.rawEvents, 0);
+  assert.equal(h.installed.helper.connected, false);
 });
