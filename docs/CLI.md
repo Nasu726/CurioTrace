@@ -58,3 +58,7 @@ The popup remains a minimal browser control plane for Start/Pause/Resume/Stop an
 The authoritative helper bootstrap in `apps/helper/internal/bootstrap` must not be reused by a separate CLI process for inspection. Opening helper authority has restart semantics and may convert durable `RECORDING` / `PAUSED` to `INTERRUPTED`.
 
 The future production CLI reader must therefore open only the encrypted observation layer in a read-only/non-authoritative mode and must respect cross-process coordination with a live helper.
+
+That read-only storage path is now implemented by `store.ReadOnlyFileStore` and `internal/inspection.Open`. It uses O_RDONLY log access, does not repair partial tails, does not call `CurrentKey`, and never opens helper authority. Default CLI wiring still awaits the native OS secret-store adapter.
+
+See `docs/READ_ONLY_INSPECTION.md`.
