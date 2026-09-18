@@ -23,6 +23,7 @@ const (
 const (
 	ReasonBootstrapUnavailable = "PRODUCTION_BOOTSTRAP_UNAVAILABLE"
 	ReasonInspectUnavailable   = "SESSION_INSPECTION_UNAVAILABLE"
+	ReasonSessionReadFailed    = "SESSION_READ_FAILED"
 )
 
 type SessionReader interface {
@@ -175,7 +176,9 @@ func runInspect(ctx context.Context, args []string, out, errOut io.Writer, deps 
 
 	events, err := deps.Reader.ListSession(ctx, *sessionID)
 	if err != nil {
-		fmt.Fprintf(errOut, "curiotrace inspect: read session: %v\n", err)
+		// Do not echo arbitrary lower-layer errors here. A future adapter error
+		// must not become a side channel for observation/key material.
+		fmt.Fprintf(errOut, "curiotrace inspect: failed (%s)\n", ReasonSessionReadFailed)
 		return ExitFailure
 	}
 	if *jsonOutput {
