@@ -120,10 +120,21 @@ func (r *Runtime) Ready(ctx context.Context) error {
 }
 
 func (r *Runtime) Close() error {
-	if r == nil || r.Lock == nil {
+	if r == nil {
 		return nil
 	}
-	return r.Lock.Close()
+	var authorityErr error
+	if r.Authority != nil {
+		snapshot := r.Authority.Snapshot()
+		if snapshot.State == session.Recording || snapshot.State == session.Paused {
+			_, authorityErr = r.Authority.Interrupt()
+		}
+	}
+	var lockErr error
+	if r.Lock != nil {
+		lockErr = r.Lock.Close()
+	}
+	return errors.Join(authorityErr, lockErr)
 }
 
 func resolvePaths(configured *platformpath.Paths) (platformpath.Paths, error) {
