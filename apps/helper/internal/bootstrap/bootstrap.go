@@ -7,6 +7,7 @@ import (
 
 	"github.com/Nasu726/CurioTrace/apps/helper/internal/app"
 	"github.com/Nasu726/CurioTrace/apps/helper/internal/platformpath"
+	"github.com/Nasu726/CurioTrace/apps/helper/internal/profilelock"
 	"github.com/Nasu726/CurioTrace/apps/helper/internal/session"
 	"github.com/Nasu726/CurioTrace/apps/helper/internal/store"
 )
@@ -37,6 +38,7 @@ type Runtime struct {
 	Store     *store.FileStore
 	Authority *session.Authority
 	Handler   *app.Handler
+	Lock      *profilelock.Lock
 }
 
 func Open(ctx context.Context, options Options) (*Runtime, error) {
@@ -57,6 +59,17 @@ func Open(ctx context.Context, options Options) (*Runtime, error) {
 	if err := platformpath.Ensure(paths); err != nil {
 		return nil, fmt.Errorf("%w: prepare platform paths: %v", ErrBootstrapNotReady, err)
 	}
+
+	lock, err := profilelock.Acquire(paths.Authority)
+	if err != nil {
+		return nil, fmt.Errorf("%w: acquire profile ownership: %w", ErrBootstrapNotReady, err)
+	}
+	keepLock := false
+	defer func() {
+		if !keepLock {
+			_ = lock.Close()
+		}
+	}()
 
 	codec, err := store.NewAESGCMCodec(options.KeyProvider)
 	if err != nil {
@@ -79,16 +92,19 @@ func Open(ctx context.Context, options Options) (*Runtime, error) {
 		return nil, fmt.Errorf("%w: open durable session authority: %v", ErrBootstrapNotReady, err)
 	}
 
-	return &Runtime{
+	runtime := &Runtime{
 		Paths:     paths,
 		Store:     durableStore,
 		Authority: authority,
 		Handler:   app.NewHandlerWithAuthorityAndStore(authority, durableStore),
-	}, nil
+		Lock:      lock,
+	}
+	keepLock = true
+	return runtime, nil
 }
 
 func (r *Runtime) Ready(ctx context.Context) error {
-	if r == nil || r.Store == nil || r.Authority == nil || r.Handler == nil {
+	if r == nil || r.Store == nil || r.Authority == nil || r.Handler == nil || r.Lock == nil || !r.Lock.Held() {
 		return ErrBootstrapNotReady
 	}
 	if ctx == nil {
@@ -101,6 +117,13 @@ func (r *Runtime) Ready(ctx context.Context) error {
 		return fmt.Errorf("%w: session authority is not durable", ErrBootstrapNotReady)
 	}
 	return nil
+}
+
+func (r *Runtime) Close() error {
+	if r == nil || r.Lock == nil {
+		return nil
+	}
+	return r.Lock.Close()
 }
 
 func resolvePaths(configured *platformpath.Paths) (platformpath.Paths, error) {
