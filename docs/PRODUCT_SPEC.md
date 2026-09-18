@@ -30,7 +30,7 @@ CurioTrace owns the pipeline from explicit session recording through single-sess
 2. maintain privacy/copyright-safe temporary source material;
 3. persist compact source observations locally;
 4. derive session-local content identity/exposure/revisit structure;
-5. let a human inspect the reconstructed session;
+5. let a human inspect the reconstructed session through a CLI/text-first surface, with richer GUI optional rather than required;
 6. generate or obtain a validated single-session `session.md`;
 7. export machine-readable session data;
 8. hand the finalized artifact to downstream tools.
@@ -105,8 +105,9 @@ Recovery:
 - Browser closure/crash does not necessarily end the session if the recorder remains alive.
 - OS restart or recorder/helper loss never silently restores `RECORDING`; the unfinished session becomes `INTERRUPTED`.
 - OS lock/suspend is not browsing exposure and stops content capture.
-- Primary Start/Pause/Stop controls must be reachable from the browsing context without opening a full management UI.
-- Recording/excluded state must be readily inspectable while browsing.
+- Primary Start/Pause/Resume/Stop controls must be reachable from the browsing context without opening a full management UI.
+- The browser control surface is intentionally minimal: explicit lifecycle control, permission consent, and readily inspectable recording/interrupted/helper state.
+- Management, diagnostics, export, deletion/cleanup, helper/storage inspection, and advanced integration controls should prefer CLI/text interfaces unless a concrete browser-UI requirement justifies otherwise.
 
 ### Post-Stop summarization states
 
@@ -468,9 +469,9 @@ Chrome/Edge: explicit Start/Stop, navigation, minimum viable content capture, pr
 
 Recognize continued display, redisplay/revisit, exposure duration, selection/copy linkage, and source provenance.
 
-### M3 — Session Viewer
+### M3 — Session reconstruction and inspection
 
-Human-facing reconstruction of what was seen, long/repeated exposure, interactions, gaps, and provenance. Use this milestone to compare system reconstruction against real browsing experience.
+Provide a human-inspectable reconstruction of what was seen, long/repeated exposure, interactions, gaps, and provenance. The baseline surface may be CLI/text/Markdown; a polished Session Viewer is optional and should be built only if later evidence shows that a richer GUI materially improves a concrete workflow.
 
 ### M4 — Firefox
 

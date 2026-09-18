@@ -269,9 +269,11 @@ Still pending:
 
 Do not wire a plaintext testing codec or generic secret-store fallback into normal recording merely to make the file backend usable.
 
-### I. Minimal session inspector
+### I. CLI-first session inspector
 
-M1 only needs a developer/basic human inspection surface showing:
+M1 needs a developer/basic human inspection surface, and the preferred baseline is CLI/text output rather than a management GUI.
+
+It should show:
 
 - session ID/state/times;
 - visited allowed source pointers;
@@ -280,7 +282,7 @@ M1 only needs a developer/basic human inspection surface showing:
 - blocked/failed/gap markers;
 - no hidden full-page archive.
 
-A polished Session Viewer belongs to M3.
+A polished Session Viewer is not a release requirement. Add richer GUI only when a concrete task cannot be served well by CLI/text output.
 
 ## 3. Start flow
 
@@ -417,7 +419,7 @@ See `docs/EVALUATION.md`.
 5. **M1 durable event storage** — per-session framed `FileStore`, AES-256-GCM record codec, and system-key lifecycle core implemented/tested; native OS secret-store adapter remains active platform work.
 6. **Durable helper session authority / restart recovery** — production baseline implemented/tested.
 7. **Platform-local storage path policy** — resolver/layout validation implemented/tested; production bootstrap connection remains pending.
-8. **Extension UI + permission flow** — production popup/onboarding/lifecycle baseline implemented/tested.
+8. **Minimal browser control plane + permission flow** — production popup/onboarding/lifecycle baseline implemented/tested; keep this surface intentionally small and move management/inspection toward CLI.
 9. **Browser event collector** — navigation/visibility/privacy/gap baseline implemented/tested in CI; real-browser verification, interaction capture, persistent exclusions, and OS lock/suspend remain pending.
 10. **Capture adapter** — integrate #8 findings; normal HTML first.
 11. **End-to-end Chrome/Edge session** — Start -> record -> Stop -> inspect.
@@ -452,7 +454,7 @@ M1 planning does not yet fix:
 - exact third-party/native OS secret-store adapter implementation;
 - OCR engine mix;
 - installer/update framework;
-- final UI visual design;
+- any optional richer GUI beyond the minimal browser control plane;
 - final capture debounce constants.
 
 The current TypeScript extension + Go helper baseline is documented in `docs/IMPLEMENTATION_STACK.md`; changing that engineering baseline does not alter the product contract. The current per-session durable-log and authority-journal formats are likewise implementation baselines and may be migrated later without changing the product's observation/privacy/lifecycle semantics.

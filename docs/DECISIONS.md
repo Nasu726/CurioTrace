@@ -165,3 +165,16 @@ These are product correctness/privacy invariants. The concrete transport, progra
 #8 will empirically compare capture architectures (DOM/viewport extraction, screenshot + local OCR, hybrid approaches, browser extension + native helper, etc.) against real web surfaces, privacy constraints, browser portability, fidelity, copyright/source-retention requirements, desktop-platform portability, and resource cost.
 
 Until #8 is resolved, these mechanisms remain candidates rather than product requirements.
+
+## 2026-09-18 — D013: CLI-first product surface with minimal browser controls
+
+Source: #45
+
+CurioTrace is CLI/helper-first rather than GUI-centric.
+
+The browser extension keeps only the control surface materially required by browser/product semantics: explicit Start/Pause/Resume/Stop reachable from browsing context, first-use permission explanation and runtime host-permission consent from a user gesture, and minimal current recording/interrupted/helper-unavailable state.
+
+Session inspection, diagnostics, export, helper/storage status, deletion/cleanup, MCP/integration status, and advanced controls should prefer CLI/text interfaces. A polished management application or Session Viewer is not a core requirement and should be added only when a concrete workflow demonstrates that richer GUI materially improves the task.
+
+Any remaining browser UI must still provide baseline keyboard/focus/readability/assistive-technology accessibility. This requirement does not imply a large GUI or an ongoing visual-design program.
+

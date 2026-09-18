@@ -11,7 +11,7 @@ The same versioned golden sessions should compare:
 - capture implementations;
 - content-identity algorithms;
 - exposure reconstruction;
-- Session Viewer behavior;
+- human session-inspection behavior (CLI/text baseline; optional richer viewer where present);
 - deterministic fallback Markdown;
 - frontier-model `session.md` generation;
 - browser/platform variants;

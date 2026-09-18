@@ -1,6 +1,6 @@
 # CurioTrace M1 Popup Controls
 
-Status: implementation note for the minimal M1 toolbar UI.
+Status: implementation note for the minimal M1 browser control plane. CurioTrace is CLI/helper-first; this popup exists only for browser-local lifecycle/permission duties.
 
 ## Purpose
 
@@ -52,15 +52,25 @@ If transport becomes uncertain:
 
 Reason/error codes shown by the M1 popup are implementation diagnostics. They must not include captured page content.
 
-## Deliberately minimal UX
+## Deliberately minimal browser surface
 
-M1 popup UI is intentionally small and dependency-free. It proves product semantics, not final visual design.
+This popup is not the primary CurioTrace application UI. It exists because lifecycle control should be reachable from the browsing context and runtime host-permission requests need a browser user gesture.
 
-Deferred:
+Keep here only:
+
+- current recording/interrupted/helper state;
+- Start / Pause / Resume / Stop;
+- the permission explanation and browser permission request;
+- small recovery guidance needed to avoid unsafe or confusing control flow.
+
+Prefer the CLI for session inspection, diagnostics, export, deletion/cleanup, helper/storage status, MCP/integration status, and advanced controls.
+
+Deferred/optional:
 
 - polished branding/icons;
-- Session Viewer (M3);
-- per-domain exclusion management UI;
-- diagnostics/repair wizard;
-- accessibility/locale polish beyond baseline semantic HTML;
-- final store-review copy.
+- rich Session Viewer;
+- broad settings/management UI;
+- diagnostics/repair wizard beyond concise browser guidance;
+- localization and richer visual design.
+
+The remaining popup still needs baseline keyboard, focus, readable contrast, and assistive-technology semantics. Accessibility is a property of the minimal control plane, not a reason to expand it.
