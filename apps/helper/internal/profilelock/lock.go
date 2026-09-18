@@ -61,6 +61,15 @@ func Acquire(root string) (*Lock, error) {
 	return &Lock{file: file}, nil
 }
 
+func (l *Lock) Held() bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return !l.released && l.file != nil
+}
+
 func (l *Lock) Close() error {
 	if l == nil {
 		return nil
