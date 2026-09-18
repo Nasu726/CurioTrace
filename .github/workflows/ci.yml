@@ -59,8 +59,10 @@ jobs:
           fi
       - name: Test production helper
         run: go test ./...
-      - name: Build production helper
-        run: go build ./cmd/curiotrace-helper
+      - name: Build production helper and CLI
+        run: |
+          go build ./cmd/curiotrace-helper
+          go build ./cmd/curiotrace
 
   production-extension:
     runs-on: ubuntu-latest

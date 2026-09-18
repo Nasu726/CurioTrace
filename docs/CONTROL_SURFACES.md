@@ -37,6 +37,14 @@ Prefer CLI/text commands for:
 
 Commands should support both human-readable and machine-readable output where practical.
 
+Current M1 baseline:
+
+- `curiotrace status [--json]` reports platform paths and truthful production readiness;
+- `curiotrace inspect --session <id> [--json]` defines single-session validated-event inspection;
+- production encrypted inspection remains unavailable until the native secret-store/bootstrap path is wired, and the CLI fails explicitly rather than falling back to plaintext.
+
+See `docs/CLI.md`.
+
 ## Optional GUI
 
 A richer GUI is allowed later, but it is not a milestone by default. Add one only when a concrete workflow is materially worse in CLI/text form.
