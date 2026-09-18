@@ -44,11 +44,11 @@ type Dependencies struct {
 }
 
 type StatusReport struct {
-	Platform     string             `json:"platform"`
-	DataRoot     string             `json:"data_root"`
-	Observations string             `json:"observations_root"`
-	Authority    string             `json:"authority_root"`
-	Readiness    Readiness          `json:"readiness"`
+	Platform     string    `json:"platform"`
+	DataRoot     string    `json:"data_root"`
+	Observations string    `json:"observations_root"`
+	Authority    string    `json:"authority_root"`
+	Readiness    Readiness `json:"readiness"`
 }
 
 func DefaultDependencies() Dependencies {
