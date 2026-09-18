@@ -282,7 +282,17 @@ It should show:
 - blocked/failed/gap markers;
 - no hidden full-page archive.
 
+Production CLI baseline now exists as a separate `curiotrace` binary:
+
+- `status [--json]` reports platform paths and production readiness;
+- `inspect --session <id> [--json]` renders validated durable observations through a `SessionReader` boundary;
+- the default production CLI currently reports encrypted inspection unavailable because the OS secret-store/bootstrap wiring is still pending.
+
 A polished Session Viewer is not a release requirement. Add richer GUI only when a concrete task cannot be served well by CLI/text output.
+
+Normative implementation note:
+
+- `docs/CLI.md`
 
 ## 3. Start flow
 
@@ -419,11 +429,12 @@ See `docs/EVALUATION.md`.
 5. **M1 durable event storage** — per-session framed `FileStore`, AES-256-GCM record codec, and system-key lifecycle core implemented/tested; native OS secret-store adapter remains active platform work.
 6. **Durable helper session authority / restart recovery** — production baseline implemented/tested.
 7. **Platform-local storage path policy** — resolver/layout validation implemented/tested; production bootstrap connection remains pending.
-8. **Minimal browser control plane + permission flow** — production popup/onboarding/lifecycle baseline implemented/tested; keep this surface intentionally small and move management/inspection toward CLI.
-9. **Browser event collector** — navigation/visibility/privacy/gap baseline implemented/tested in CI; real-browser verification, interaction capture, persistent exclusions, and OS lock/suspend remain pending.
-10. **Capture adapter** — integrate #8 findings; normal HTML first.
-11. **End-to-end Chrome/Edge session** — Start -> record -> Stop -> inspect.
-12. **M1 privacy/restart/adversarial verification**.
+8. **Minimal browser control plane + permission flow** — production popup/onboarding/lifecycle baseline implemented/tested; keep this surface intentionally small.
+9. **CLI inspector core** — separate `curiotrace` binary with status + single-session human/JSON inspection core implemented/tested; encrypted production reader/bootstrap remains pending.
+10. **Browser event collector** — navigation/visibility/privacy/gap baseline implemented/tested in CI; real-browser verification, interaction capture, persistent exclusions, and OS lock/suspend remain pending.
+11. **Capture adapter** — integrate #8 findings; normal HTML first.
+12. **End-to-end Chrome/Edge session** — Start -> record -> Stop -> inspect.
+13. **M1 privacy/restart/adversarial verification**.
 
 ## 9. M1 stop conditions
 
