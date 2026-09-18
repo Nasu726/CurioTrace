@@ -15,9 +15,9 @@ import (
 )
 
 type staticKeyProvider struct {
-	id   string
-	key  []byte
-	err  error
+	id  string
+	key []byte
+	err error
 }
 
 func (p *staticKeyProvider) CurrentKey(context.Context) (store.KeyMaterial, error) {
