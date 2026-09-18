@@ -123,14 +123,11 @@ func runStatus(ctx context.Context, args []string, out, errOut io.Writer, deps D
 	readiness := Readiness{
 		RecordingAvailable:  false,
 		RecordingReason:     ReasonBootstrapUnavailable,
-		InspectionAvailable: deps.Reader != nil,
+		InspectionAvailable: false,
+		InspectionReason:    ReasonInspectUnavailable,
 	}
 	if deps.Readiness != nil {
 		readiness = deps.Readiness(ctx)
-	}
-	if deps.Reader != nil && readiness.InspectionReason == ReasonInspectUnavailable {
-		readiness.InspectionAvailable = true
-		readiness.InspectionReason = ""
 	}
 	report := StatusReport{
 		Platform:     deps.GOOS,
