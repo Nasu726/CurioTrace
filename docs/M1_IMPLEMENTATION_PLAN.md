@@ -251,7 +251,8 @@ Current production boundary:
 - helper session authority durability/restart conversion is implemented separately from observation persistence so browsing content is not copied into the control journal;
 - platform-local filesystem path policy is implemented under `apps/helper/internal/platformpath`: Windows uses `LOCALAPPDATA`, macOS uses Application Support, Linux uses absolute `XDG_DATA_HOME` or `~/.local/share`; observations and authority use fixed separate child directories;
 - managed final-directory symlinks/non-directories and unsafe layouts are rejected; this is not presented as complete anti-TOCTOU protection against a hostile same-user process;
-- the concrete native OS secret-store adapter and production CLI/bootstrap wiring are still pending, so the default helper remains unable to Start normal recording.
+- authoritative production composition is now implemented in `apps/helper/internal/bootstrap`: given a production KeyProvider it wires platform paths, AES-GCM FileStore, durable authority, and Handler;
+- the concrete native OS secret-store adapter and shipped-entrypoint activation are still pending, so the default helper remains unable to Start normal recording.
 
 Normative implementation notes:
 
@@ -260,11 +261,13 @@ Normative implementation notes:
 - `docs/SYSTEM_KEY_PROVIDER.md`
 - `docs/DURABLE_SESSION_AUTHORITY.md`
 - `docs/PLATFORM_STORAGE_PATHS.md`
+- `docs/PRODUCTION_BOOTSTRAP.md`
 
 Still pending:
 
 - concrete Windows Credential Manager / macOS Keychain / Linux Secret Service adapter;
-- production CLI/bootstrap wiring that combines the resolved platform root, encrypted observation store, system key provider, and durable authority repository;
+- switch the Native Messaging entrypoint to the authoritative production bootstrap only after its platform key provider is available;
+- separate read-only encrypted observation wiring for the CLI; the CLI must not open helper authority merely to inspect data;
 - explicit single-helper/profile locking or equivalent coordination before multiple helper processes could ever become authoritative for the same profile.
 
 Do not wire a plaintext testing codec or generic secret-store fallback into normal recording merely to make the file backend usable.
@@ -428,7 +431,7 @@ See `docs/EVALUATION.md`.
 4. **Observation validation + store interface** — completed production baseline.
 5. **M1 durable event storage** — per-session framed `FileStore`, AES-256-GCM record codec, and system-key lifecycle core implemented/tested; native OS secret-store adapter remains active platform work.
 6. **Durable helper session authority / restart recovery** — production baseline implemented/tested.
-7. **Platform-local storage path policy** — resolver/layout validation implemented/tested; production bootstrap connection remains pending.
+7. **Platform-local storage path policy + helper composition** — resolver/layout validation and authoritative production bootstrap are implemented/tested; OS key adapter and safe entrypoint activation remain pending.
 8. **Minimal browser control plane + permission flow** — production popup/onboarding/lifecycle baseline implemented/tested; keep this surface intentionally small.
 9. **CLI inspector core** — separate `curiotrace` binary with status + single-session human/JSON inspection core implemented/tested; encrypted production reader/bootstrap remains pending.
 10. **Browser event collector** — navigation/visibility/privacy/gap baseline implemented/tested in CI; real-browser verification, interaction capture, persistent exclusions, and OS lock/suspend remain pending.

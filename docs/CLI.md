@@ -46,8 +46,15 @@ The popup remains a minimal browser control plane for Start/Pause/Resume/Stop an
 ## Pending work
 
 - concrete Windows Credential Manager / macOS Keychain / Linux Secret Service adapter;
-- production encrypted-store `SessionReader` wiring;
+- production encrypted-store `SessionReader` wiring through a read-only path that never opens/mutates helper authority;
 - session catalog/listing without requiring the caller to already know a session ID;
 - helper/storage `doctor` diagnostics;
 - export and deletion/cleanup commands;
 - MCP/summarizer integration status.
+
+
+## Authority safety boundary
+
+The authoritative helper bootstrap in `apps/helper/internal/bootstrap` must not be reused by a separate CLI process for inspection. Opening helper authority has restart semantics and may convert durable `RECORDING` / `PAUSED` to `INTERRUPTED`.
+
+The future production CLI reader must therefore open only the encrypted observation layer in a read-only/non-authoritative mode and must respect cross-process coordination with a live helper.
