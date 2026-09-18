@@ -17,9 +17,9 @@ import (
 )
 
 var (
-	ErrInvalidReadOnlyStore   = errors.New("invalid read-only durable store configuration")
-	ErrUnsafeReadOnlyStore    = errors.New("unsafe read-only durable store path")
-	ErrIncompleteDurableTail  = errors.New("incomplete durable record tail")
+	ErrInvalidReadOnlyStore  = errors.New("invalid read-only durable store configuration")
+	ErrUnsafeReadOnlyStore   = errors.New("unsafe read-only durable store path")
+	ErrIncompleteDurableTail = errors.New("incomplete durable record tail")
 )
 
 // ReadOnlyFileStore reads existing CurioTrace observation logs without creating,
