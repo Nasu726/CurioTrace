@@ -174,7 +174,7 @@ func TestInspectJSONPreservesValidatedEventShape(t *testing.T) {
 }
 
 func TestInspectReaderFailureDoesNotEchoEventPayload(t *testing.T) {
-	reader := &fakeReader{err: errors.New("durable store unavailable")}
+	reader := &fakeReader{err: errors.New("durable store failed near SENSITIVE_CANARY")}
 	var out, errOut bytes.Buffer
 	code := Run(context.Background(), []string{"inspect", "--session", testSessionID}, &out, &errOut, Dependencies{Reader: reader})
 	if code != ExitFailure {
@@ -183,8 +183,11 @@ func TestInspectReaderFailureDoesNotEchoEventPayload(t *testing.T) {
 	if out.Len() != 0 {
 		t.Fatalf("unexpected stdout: %q", out.String())
 	}
-	if !strings.Contains(errOut.String(), "durable store unavailable") {
+	if !strings.Contains(errOut.String(), ReasonSessionReadFailed) {
 		t.Fatalf("missing safe error class: %q", errOut.String())
+	}
+	if strings.Contains(errOut.String(), "SENSITIVE_CANARY") {
+		t.Fatalf("lower-layer error leaked into stderr: %q", errOut.String())
 	}
 }
 
