@@ -262,12 +262,13 @@ Normative implementation notes:
 - `docs/DURABLE_SESSION_AUTHORITY.md`
 - `docs/PLATFORM_STORAGE_PATHS.md`
 - `docs/PRODUCTION_BOOTSTRAP.md`
+- `docs/READ_ONLY_INSPECTION.md`
 
 Still pending:
 
 - concrete Windows Credential Manager / macOS Keychain / Linux Secret Service adapter;
 - switch the Native Messaging entrypoint to the authoritative production bootstrap only after its platform key provider is available;
-- separate read-only encrypted observation wiring for the CLI; the CLI must not open helper authority merely to inspect data;
+- wire the implemented read-only encrypted observation path into the default CLI once the native OS key adapter exists; the CLI must not open helper authority merely to inspect data;
 - explicit single-helper/profile locking or equivalent coordination before multiple helper processes could ever become authoritative for the same profile.
 
 Do not wire a plaintext testing codec or generic secret-store fallback into normal recording merely to make the file backend usable.
@@ -433,7 +434,7 @@ See `docs/EVALUATION.md`.
 6. **Durable helper session authority / restart recovery** — production baseline implemented/tested.
 7. **Platform-local storage path policy + helper composition** — resolver/layout validation and authoritative production bootstrap are implemented/tested; OS key adapter and safe entrypoint activation remain pending.
 8. **Minimal browser control plane + permission flow** — production popup/onboarding/lifecycle baseline implemented/tested; keep this surface intentionally small.
-9. **CLI inspector core** — separate `curiotrace` binary with status + single-session human/JSON inspection core implemented/tested; encrypted production reader/bootstrap remains pending.
+9. **CLI inspector + read-only encrypted reader** — separate `curiotrace` binary plus non-authoritative O_RDONLY encrypted session reader are implemented/tested; default wiring still awaits the native OS key adapter.
 10. **Browser event collector** — navigation/visibility/privacy/gap baseline implemented/tested in CI; real-browser verification, interaction capture, persistent exclusions, and OS lock/suspend remain pending.
 11. **Capture adapter** — integrate #8 findings; normal HTML first.
 12. **End-to-end Chrome/Edge session** — Start -> record -> Stop -> inspect.
