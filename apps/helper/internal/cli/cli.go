@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -281,4 +280,3 @@ func valueOrUnknown(value string) string {
 	return value
 }
 
-var _ = errors.Is
