@@ -89,6 +89,48 @@ func TestOpenComposesEncryptedStoreDurableAuthorityAndHandler(t *testing.T) {
 	}
 }
 
+func TestGracefulCloseInterruptsActiveAuthorityBeforeUnlock(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	keys := testKeyProvider()
+
+	runtime, err := Open(ctx, Options{Paths: &paths, KeyProvider: keys})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := runtime.Authority.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.Lock.Held() {
+		t.Fatal("profile lock remained held after Close")
+	}
+
+	repository, err := session.NewFileSnapshotRepository(paths.Authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, found, err := repository.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("durable authority snapshot missing after Close")
+	}
+	if snapshot.State != session.Interrupted {
+		t.Fatalf("state=%s want=%s", snapshot.State, session.Interrupted)
+	}
+	if snapshot.SessionID != started.SessionID {
+		t.Fatalf("session changed: %q != %q", snapshot.SessionID, started.SessionID)
+	}
+	if snapshot.RecordingEpoch <= started.RecordingEpoch {
+		t.Fatalf("epoch did not advance: start=%d closed=%d", started.RecordingEpoch, snapshot.RecordingEpoch)
+	}
+}
+
 func TestReopenInterruptsUnfinishedRecordingAndKeepsEncryptedEventsReadable(t *testing.T) {
 	ctx := context.Background()
 	paths := testPaths(t)
