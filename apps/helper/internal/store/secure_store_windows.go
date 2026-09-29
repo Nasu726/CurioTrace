@@ -22,13 +22,11 @@ const (
 )
 
 var (
-	windowsAdvapi32      = syscall.NewLazyDLL("advapi32.dll")
-	windowsCredWriteW    = windowsAdvapi32.NewProc("CredWriteW")
-	windowsCredReadW     = windowsAdvapi32.NewProc("CredReadW")
-	windowsCredDeleteW   = windowsAdvapi32.NewProc("CredDeleteW")
-	windowsCredFree      = windowsAdvapi32.NewProc("CredFree")
-	ErrInvalidSecretName = errors.New("invalid secure secret name")
-	ErrSecretTooLarge    = errors.New("secure secret value too large")
+	windowsAdvapi32    = syscall.NewLazyDLL("advapi32.dll")
+	windowsCredWriteW  = windowsAdvapi32.NewProc("CredWriteW")
+	windowsCredReadW   = windowsAdvapi32.NewProc("CredReadW")
+	windowsCredDeleteW = windowsAdvapi32.NewProc("CredDeleteW")
+	windowsCredFree    = windowsAdvapi32.NewProc("CredFree")
 )
 
 type windowsCredential struct {

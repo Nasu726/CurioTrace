@@ -1,6 +1,6 @@
 # System key-provider boundary
 
-Status: M1 engineering contract. The key-lifecycle core and Windows Credential Manager adapter are implemented; macOS Keychain and Linux Secret Service adapters remain pending.
+Status: M1 engineering contract. The key-lifecycle core, Windows Credential Manager adapter, and macOS Keychain adapter are implemented; Linux Secret Service remains pending.
 
 ## Purpose
 
@@ -55,6 +55,23 @@ A retrieved `CredentialBlob` is copied into caller-owned Go memory before `CredF
 
 Windows CI runs the real adapter on a Windows runner using a randomized test namespace. The integration test covers missing/read/write/overwrite/delete semantics, caller-owned returned slices, first key provisioning, provider reopen, rotation, and historical-key lookup. Production namespace credentials are not used by tests.
 
+## macOS Keychain adapter
+
+The macOS production adapter calls Security.framework directly through a narrow cgo boundary:
+
+- `SecItemCopyMatching` retrieves a generic-password item's data;
+- `SecItemUpdate` replaces an existing value;
+- `SecItemAdd` creates the item when it does not yet exist;
+- `SecItemDelete` removes it.
+
+Items use `kSecClassGenericPassword`, a fixed CurioTrace `kSecAttrService`, and the internal storage key as `kSecAttrAccount`. Secret bytes are stored only as `kSecValueData`. CurioTrace does not invoke `/usr/bin/security` and does not silently select another keyring backend.
+
+Keychain-owned `CFData` is copied through a bounded temporary C buffer into caller-owned Go memory. Temporary C secret buffers used for both reads and writes are overwritten before being freed. Errors expose only operation/status information, not service-account secret values.
+
+The production macOS adapter requires cgo/Security.framework. A `darwin && !cgo` build fails closed rather than falling back to file storage or another credential backend.
+
+macOS CI runs the real adapter on a macOS runner using randomized Keychain service names. The integration test covers missing/read/write/overwrite/delete semantics, empty values, caller-owned returned slices, first key provisioning, provider reopen, rotation, and historical-key lookup; the same job builds the macOS helper and CLI.
+
 ## Concurrency
 
 The M1 provider serializes provisioning and rotation within one helper process. Cross-process authority is enforced separately by the OS-backed profile ownership lock in `docs/PROFILE_LOCK.md`. The authoritative helper acquires profile ownership before the production key provider is touched, so two helper processes cannot race first-use provisioning for the same profile under normal supported operation.
@@ -70,13 +87,9 @@ Read-only CLI inspection does not become helper authority and uses the separate 
 Current status:
 
 - Windows Credential Manager: **implemented and exercised on a Windows CI runner**;
-- macOS Keychain: pending;
+- macOS Keychain: **implemented and exercised on a macOS CI runner**;
 - Linux Secret Service: pending.
 
-Earlier library investigation remains relevant to the remaining adapters:
+The earlier generic-keyring investigation remains useful background, but Windows and macOS now use direct platform APIs rather than either candidate library. Linux must likewise use the Secret Service boundary without falling back to application files, `pass`, or `keyctl` merely because the desktop Secret Service is unavailable.
 
-- `zalando/go-keyring` has useful cross-platform coverage but its macOS path uses `/usr/bin/security`; an upstream security concern argues that this weakens expected Keychain access-control semantics, so it is not selected for CurioTrace.
-- `99designs/keyring` exposes an explicit `AllowedBackends` whitelist and its macOS backend uses Keychain APIs directly. However, its latest release/repository activity is old enough that CurioTrace treats it only as a replaceable adapter candidate rather than a product-semantic dependency.
-- a direct macOS Keychain adapter may require cgo/Security.framework integration. A production macOS build must treat codesigning/keychain behavior as a platform packaging requirement rather than pretending the helper is universally static.
-
-The shipped Native Messaging entrypoint remains fail-closed until the supported desktop OS adapters required by the product are implemented and wired through the production bootstrap. Windows support alone does not activate a partial production recording mode.
+The shipped Native Messaging entrypoint remains fail-closed until Linux Secret Service is implemented and all supported desktop OS adapters are wired through the production bootstrap. Windows/macOS support alone does not activate a partial production recording mode.
