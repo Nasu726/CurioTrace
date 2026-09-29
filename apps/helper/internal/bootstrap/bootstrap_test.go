@@ -10,17 +10,20 @@ import (
 
 	"github.com/Nasu726/CurioTrace/apps/helper/internal/observation"
 	"github.com/Nasu726/CurioTrace/apps/helper/internal/platformpath"
+	"github.com/Nasu726/CurioTrace/apps/helper/internal/profilelock"
 	"github.com/Nasu726/CurioTrace/apps/helper/internal/session"
 	"github.com/Nasu726/CurioTrace/apps/helper/internal/store"
 )
 
 type staticKeyProvider struct {
-	id  string
-	key []byte
-	err error
+	id           string
+	key          []byte
+	err          error
+	currentCalls int
 }
 
 func (p *staticKeyProvider) CurrentKey(context.Context) (store.KeyMaterial, error) {
+	p.currentCalls++
 	if p.err != nil {
 		return store.KeyMaterial{}, p.err
 	}
@@ -71,7 +74,8 @@ func TestOpenComposesEncryptedStoreDurableAuthorityAndHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runtime.Handler == nil || runtime.Store == nil || runtime.Authority == nil {
+	defer runtime.Close()
+	if runtime.Handler == nil || runtime.Store == nil || runtime.Authority == nil || runtime.Lock == nil || !runtime.Lock.Held() {
 		t.Fatalf("incomplete runtime: %#v", runtime)
 	}
 	if !runtime.Authority.IsDurable() {
@@ -82,6 +86,48 @@ func TestOpenComposesEncryptedStoreDurableAuthorityAndHandler(t *testing.T) {
 	}
 	if runtime.Paths != paths {
 		t.Fatalf("unexpected paths: %+v", runtime.Paths)
+	}
+}
+
+func TestGracefulCloseInterruptsActiveAuthorityBeforeUnlock(t *testing.T) {
+	ctx := context.Background()
+	paths := testPaths(t)
+	keys := testKeyProvider()
+
+	runtime, err := Open(ctx, Options{Paths: &paths, KeyProvider: keys})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := runtime.Authority.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.Lock.Held() {
+		t.Fatal("profile lock remained held after Close")
+	}
+
+	repository, err := session.NewFileSnapshotRepository(paths.Authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, found, err := repository.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("durable authority snapshot missing after Close")
+	}
+	if snapshot.State != session.Interrupted {
+		t.Fatalf("state=%s want=%s", snapshot.State, session.Interrupted)
+	}
+	if snapshot.SessionID != started.SessionID {
+		t.Fatalf("session changed: %q != %q", snapshot.SessionID, started.SessionID)
+	}
+	if snapshot.RecordingEpoch <= started.RecordingEpoch {
+		t.Fatalf("epoch did not advance: start=%d closed=%d", started.RecordingEpoch, snapshot.RecordingEpoch)
 	}
 }
 
@@ -112,11 +158,15 @@ func TestReopenInterruptsUnfinishedRecordingAndKeepsEncryptedEventsReadable(t *t
 	if err := first.Store.Append(ctx, event); err != nil {
 		t.Fatal(err)
 	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	second, err := Open(ctx, Options{Paths: &paths, KeyProvider: keys})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer second.Close()
 	recovered := second.Authority.Snapshot()
 	if recovered.State != session.Interrupted {
 		t.Fatalf("state=%s want=%s", recovered.State, session.Interrupted)
@@ -148,6 +198,34 @@ func TestKeyReadinessFailurePreventsAuthorityOpen(t *testing.T) {
 	if !errors.Is(err, ErrBootstrapNotReady) {
 		t.Fatalf("expected ErrBootstrapNotReady, got %v", err)
 	}
+
+	good, err := Open(context.Background(), Options{Paths: &paths, KeyProvider: testKeyProvider()})
+	if err != nil {
+		t.Fatalf("failed bootstrap leaked profile lock: %v", err)
+	}
+	good.Close()
+}
+
+func TestSecondHelperIsRejectedBeforeTouchingItsKeyProvider(t *testing.T) {
+	paths := testPaths(t)
+	first, err := Open(context.Background(), Options{Paths: &paths, KeyProvider: testKeyProvider()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+
+	secondKeys := testKeyProvider()
+	second, err := Open(context.Background(), Options{Paths: &paths, KeyProvider: secondKeys})
+	if second != nil {
+		second.Close()
+		t.Fatalf("unexpected second runtime: %#v", second)
+	}
+	if !errors.Is(err, profilelock.ErrProfileLocked) {
+		t.Fatalf("expected profile lock rejection, got %v", err)
+	}
+	if secondKeys.currentCalls != 0 {
+		t.Fatalf("second helper touched key provider %d times before lock rejection", secondKeys.currentCalls)
+	}
 }
 
 func TestReadyReflectsLaterKeyStoreFailure(t *testing.T) {
@@ -157,6 +235,7 @@ func TestReadyReflectsLaterKeyStoreFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer runtime.Close()
 	keys.err = errors.New("secure store unavailable")
 	if err := runtime.Ready(context.Background()); !errors.Is(err, ErrBootstrapNotReady) {
 		t.Fatalf("expected bootstrap readiness failure, got %v", err)

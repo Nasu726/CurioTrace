@@ -251,7 +251,8 @@ Current production boundary:
 - helper session authority durability/restart conversion is implemented separately from observation persistence so browsing content is not copied into the control journal;
 - platform-local filesystem path policy is implemented under `apps/helper/internal/platformpath`: Windows uses `LOCALAPPDATA`, macOS uses Application Support, Linux uses absolute `XDG_DATA_HOME` or `~/.local/share`; observations and authority use fixed separate child directories;
 - managed final-directory symlinks/non-directories and unsafe layouts are rejected; this is not presented as complete anti-TOCTOU protection against a hostile same-user process;
-- authoritative production composition is now implemented in `apps/helper/internal/bootstrap`: given a production KeyProvider it wires platform paths, AES-GCM FileStore, durable authority, and Handler;
+- authoritative production composition is implemented in `apps/helper/internal/bootstrap`: given a production KeyProvider it wires platform paths, exclusive profile ownership, AES-GCM FileStore, durable authority, and Handler;
+- single-profile helper ownership is implemented with OS kernel locks and executes in Ubuntu, Windows, and macOS CI before the production helper is considered ready;
 - the concrete native OS secret-store adapter and shipped-entrypoint activation are still pending, so the default helper remains unable to Start normal recording.
 
 Normative implementation notes:
@@ -262,14 +263,14 @@ Normative implementation notes:
 - `docs/DURABLE_SESSION_AUTHORITY.md`
 - `docs/PLATFORM_STORAGE_PATHS.md`
 - `docs/PRODUCTION_BOOTSTRAP.md`
+- `docs/PROFILE_LOCK.md`
 - `docs/READ_ONLY_INSPECTION.md`
 
 Still pending:
 
 - concrete Windows Credential Manager / macOS Keychain / Linux Secret Service adapter;
 - switch the Native Messaging entrypoint to the authoritative production bootstrap only after its platform key provider is available;
-- wire the implemented read-only encrypted observation path into the default CLI once the native OS key adapter exists; the CLI must not open helper authority merely to inspect data;
-- explicit single-helper/profile locking or equivalent coordination before multiple helper processes could ever become authoritative for the same profile.
+- wire the implemented read-only encrypted observation path into the default CLI once the native OS key adapter exists; the CLI must not open helper authority merely to inspect data.
 
 Do not wire a plaintext testing codec or generic secret-store fallback into normal recording merely to make the file backend usable.
 
@@ -397,12 +398,13 @@ Independent cheap jobs run in parallel:
 - Python native-helper protocol/privacy reference tests;
 - Node extension reference authority/protocol tests;
 - Go production-helper format/test/build checks;
+- Ubuntu/Windows/macOS profile-lock/bootstrap execution tests;
 - TypeScript production-extension build/conformance tests;
 - JSON schema syntax/shape validation.
 
 The TypeScript production-extension job covers permission/start gating, helper-authoritative lifecycle controls, Native Messaging disconnect/timeout behavior, capture-token races, observation acknowledgement failure semantics, recording-only browser listener attachment, navigation/visibility/privacy event production, URL secret sanitization, private/internal non-leakage, Start/Resume view snapshots, and Pause/Resume/disconnect listener lifecycle.
 
-The Go production-helper job includes durable observation-store, encrypted-key lifecycle, durable-authority, and platform-path tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, authenticated tamper rejection, key rotation, key-state corruption, restart `RECORDING`/`PAUSED` -> `INTERRUPTED`, authority persistence failures, platform base selection, managed-directory containment/symlink rejection, session deletion, and POSIX access modes where applicable.
+The Go production-helper job includes durable observation-store, encrypted-key lifecycle, durable-authority, platform-path, and profile-ownership tests for reopen, idempotency, partial-tail recovery, corruption rejection, codec mismatch, authenticated tamper rejection, key rotation, key-state corruption, restart `RECORDING`/`PAUSED` -> `INTERRUPTED`, authority persistence failures, platform base selection, managed-directory containment/symlink rejection, exclusive helper ownership, graceful interruption-before-unlock, session deletion, and POSIX access modes where applicable. Windows/macOS profile-lock/bootstrap packages are additionally cross-compiled from the Linux production-helper job.
 
 As production modules are added, their tests join the appropriate production job rather than replacing the independent reference oracles.
 
@@ -432,7 +434,7 @@ See `docs/EVALUATION.md`.
 4. **Observation validation + store interface** — completed production baseline.
 5. **M1 durable event storage** — per-session framed `FileStore`, AES-256-GCM record codec, and system-key lifecycle core implemented/tested; native OS secret-store adapter remains active platform work.
 6. **Durable helper session authority / restart recovery** — production baseline implemented/tested.
-7. **Platform-local storage path policy + helper composition** — resolver/layout validation and authoritative production bootstrap are implemented/tested; OS key adapter and safe entrypoint activation remain pending.
+7. **Platform-local storage + helper composition + profile ownership** — resolver/layout validation, authoritative production bootstrap, and exclusive single-profile ownership are implemented/tested on all three desktop OS CI runners; OS key adapter and safe entrypoint activation remain pending.
 8. **Minimal browser control plane + permission flow** — production popup/onboarding/lifecycle baseline implemented/tested; keep this surface intentionally small.
 9. **CLI inspector + read-only encrypted reader** — separate `curiotrace` binary plus non-authoritative O_RDONLY encrypted session reader are implemented/tested; default wiring still awaits the native OS key adapter.
 10. **Browser event collector** — navigation/visibility/privacy/gap baseline implemented/tested in CI; real-browser verification, interaction capture, persistent exclusions, and OS lock/suspend remain pending.
@@ -454,6 +456,7 @@ Do not claim M1 complete if any of the following remains true:
 - unvalidated protocol data can reach the durable store through an ordinary production API;
 - normal recording can start with a plaintext/testing durable codec or a generic secret-store fallback;
 - production helper can enter `RECORDING` without durable authority persistence;
+- two helper processes can simultaneously become authoritative for the same profile;
 - unfinished session state can silently recover as `RECORDING` after helper/OS restart;
 - authority journal corruption is silently repaired beyond an incomplete trailing write;
 - durable browsing data can fall back to cwd/temp/roaming storage because the platform-local root is unavailable;

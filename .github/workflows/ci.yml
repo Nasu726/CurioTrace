@@ -59,10 +59,36 @@ jobs:
           fi
       - name: Test production helper
         run: go test ./...
+      - name: Cross-compile profile locking and bootstrap
+        run: |
+          GOOS=windows GOARCH=amd64 go test -c ./internal/profilelock -o /tmp/profilelock-windows.test.exe
+          GOOS=windows GOARCH=amd64 go test -c ./internal/bootstrap -o /tmp/bootstrap-windows.test.exe
+          GOOS=darwin GOARCH=amd64 go test -c ./internal/profilelock -o /tmp/profilelock-darwin.test
+          GOOS=darwin GOARCH=amd64 go test -c ./internal/bootstrap -o /tmp/bootstrap-darwin.test
       - name: Build production helper and CLI
         run: |
           go build ./cmd/curiotrace-helper
           go build ./cmd/curiotrace
+
+  profile-lock-platforms:
+    name: profile-lock-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: apps/helper
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Execute profile ownership tests
+        run: go test ./internal/profilelock ./internal/bootstrap
 
   production-extension:
     runs-on: ubuntu-latest
