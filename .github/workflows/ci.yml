@@ -59,6 +59,12 @@ jobs:
           fi
       - name: Test production helper
         run: go test ./...
+      - name: Cross-compile profile locking and bootstrap
+        run: |
+          GOOS=windows GOARCH=amd64 go test -c ./internal/profilelock -o /tmp/profilelock-windows.test.exe
+          GOOS=windows GOARCH=amd64 go test -c ./internal/bootstrap -o /tmp/bootstrap-windows.test.exe
+          GOOS=darwin GOARCH=amd64 go test -c ./internal/profilelock -o /tmp/profilelock-darwin.test
+          GOOS=darwin GOARCH=amd64 go test -c ./internal/bootstrap -o /tmp/bootstrap-darwin.test
       - name: Build production helper and CLI
         run: |
           go build ./cmd/curiotrace-helper
