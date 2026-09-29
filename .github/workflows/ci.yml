@@ -109,6 +109,25 @@ jobs:
           go build ./cmd/curiotrace-helper
           go build ./cmd/curiotrace
 
+  macos-secret-store:
+    runs-on: macos-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: apps/helper
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Test macOS Keychain secure storage
+        run: go test ./internal/store -count=1
+      - name: Build macOS helper and CLI
+        run: |
+          go build ./cmd/curiotrace-helper
+          go build ./cmd/curiotrace
+
   production-extension:
     runs-on: ubuntu-latest
     timeout-minutes: 5
