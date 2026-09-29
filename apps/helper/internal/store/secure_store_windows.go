@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -80,6 +81,7 @@ func (s *windowsCredentialStore) Get(key string) ([]byte, error) {
 		0,
 		uintptr(unsafe.Pointer(&credential)),
 	)
+	runtime.KeepAlive(targetPtr)
 	if result == 0 {
 		if errors.Is(callErr, windowsErrorNotFound) {
 			return nil, ErrSecretNotFound
@@ -134,6 +136,9 @@ func (s *windowsCredentialStore) Set(key string, value []byte) error {
 		uintptr(unsafe.Pointer(&credential)),
 		0,
 	)
+	runtime.KeepAlive(targetPtr)
+	runtime.KeepAlive(userPtr)
+	runtime.KeepAlive(value)
 	if result == 0 {
 		return windowsCredentialError("write credential", callErr)
 	}
@@ -155,6 +160,7 @@ func (s *windowsCredentialStore) Remove(key string) error {
 		uintptr(windowsCredentialTypeGeneric),
 		0,
 	)
+	runtime.KeepAlive(targetPtr)
 	if result == 0 {
 		if errors.Is(callErr, windowsErrorNotFound) {
 			return ErrSecretNotFound
