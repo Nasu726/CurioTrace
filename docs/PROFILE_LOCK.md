@@ -74,5 +74,5 @@ The M1 tests cover:
 - bootstrap rejects the second helper before touching its key provider;
 - failed bootstrap does not leak the lock;
 - graceful runtime close persists `INTERRUPTED` before releasing ownership;
-- Linux tests execute in CI;
-- Windows and macOS profile-lock/bootstrap packages are cross-compiled in CI.
+- profile-lock/bootstrap tests execute on Ubuntu, Windows, and macOS CI runners;
+- Windows/macOS packages are additionally cross-compiled from the main production-helper CI job.
